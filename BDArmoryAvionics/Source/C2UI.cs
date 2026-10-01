@@ -182,7 +182,7 @@ namespace BDArmory.Avionics
                 {
                     if (y > r.yMax - 46) break;
                     float range = (t.position - s.node.vessel.CoM).magnitude;
-                    bool canReach = range <= s.node.maxMissileRange && s.node.IsShooter;
+                    bool canReach = s.node.IsShooter && IADSController.CanReach(s, t);
                     GUI.enabled = canReach && s.assigned != t;
                     if (Button(new Rect(x, y, w, 20), $"Engage with {s.node.Name} ({range / 1000f:F0} km)", s.assigned == t)) IADSController.Assign(net.team, s.node.vessel, t);
                     GUI.enabled = true;

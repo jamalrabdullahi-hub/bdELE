@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using UnityEngine;
 
+using BDArmory.Extensions;
+using BDArmory.Radar;
 using BDArmory.UI;
 using BDArmory.Utils;
 
@@ -241,7 +243,31 @@ namespace BDArmory.Avionics
                 picks.Add((head, c.Key));
                 if (!c.IsGPS || c.Key == selectedKey) labels.Add((head, c));
             }
+
+            // Threats: strobes on the outer ring at the threat's bearing; incoming missiles get a line to own ship.
+            var threatLabels = new List<(Vector2 pos, Threat t)>();
+            if (AvionicsSettings.Radar3DShowThreats)
+                foreach (var t in ThreatWarning.Threats)
+                {
+                    Vector3 local = ToLocal(t.position - ownPos);
+                    Vector2 flat = new(local.x, local.z);
+                    if (flat.sqrMagnitude < 1) continue;
+                    Vector2 d = flat.normalized;
+                    Vector2 outer = Project(new Vector3(d.x * range * 1.08f, 0, d.y * range * 1.08f));
+                    Vector2 inner = Project(new Vector3(d.x * range * 0.9f, 0, d.y * range * 0.9f));
+                    bool blink = (t.isMissile || t.type == RadarWarningReceiver.RWRThreatTypes.MissileLaunch) && Mathf.Repeat(Time.time, 0.4f) < 0.2f;
+                    AvionicsDraw.Line(inner, outer, blink ? 4 : 2.5f, t.Color);
+                    if (t.isMissile && flat.magnitude <= range)
+                        AvionicsDraw.DashedLine(Project(local), Project(Vector3.zero), 1.5f, AvionicsDraw.Missile, 4, 3);
+                    threatLabels.Add((outer, t));
+                }
             AvionicsDraw.End();
+            foreach (var (pos, t) in threatLabels)
+            {
+                string tti = t.timeToImpact > 0 && t.timeToImpact < 999 ? $" {t.timeToImpact:F0}s" : "";
+                AvionicsDraw.ShadowLabel(new Rect(pos.x - 40, pos.y - 16, 80, 13), t.Kind + tti, AvionicsDraw.LabelCenter, t.Color);
+            }
+            DrawWeaponEstimate(scope, own);
 
             // Labels (drawn after the GL batch)
             var small = AvionicsDraw.LabelSmall;
@@ -272,6 +298,23 @@ namespace BDArmory.Avionics
             AvionicsDraw.ColorLabel(new Rect(scope.xMax - 146, scope.yMax - 16, 140, 14), beyondText, AvionicsDraw.LabelRight, AvionicsDraw.ScopeText);
             if (AvionicsContacts.WM.vesselRadarData == null)
                 AvionicsDraw.ColorLabel(new Rect(scope.x + 6, scope.y + 4, 260, 14), "No radar or IRST on this vessel", small, AvionicsDraw.Unknown);
+        }
+
+        /// <summary>Selected missile against the selected contact: predicted time of flight and max range from the flight estimator.</summary>
+        static void DrawWeaponEstimate(Rect scope, Vessel own)
+        {
+            var wm = AvionicsContacts.WM;
+            var m = wm != null ? wm.CurrentMissile : null;
+            var c = AvionicsContacts.Selected;
+            if (m == null || c == null || c.IsGPS) return;
+            var est = MissileEstimator.Estimate(m, own.CoM, own.Velocity(), c.position, c.velocity, withMaxRange: true, targetId: c.vessel != null ? c.vessel.persistentId : 0);
+            if (!est.valid) return;
+            string name = m.GetShortName();
+            if (name.Length > 16) name = name.Substring(0, 16);
+            string inRange = est.canReach ? "IN RANGE" : "OUT OF RANGE";
+            string text = $"{name}  Rmax {AvionicsDraw.FormatRange(est.maxRange)}  " +
+                          (est.canReach ? $"TOF {est.timeOfFlight:F0}s  {est.arrivalSpeed:F0} m/s" : "") + $"  {inRange}{(est.approximate ? " (est.)" : "")}";
+            AvionicsDraw.ShadowLabel(new Rect(scope.x + 6, scope.y + 18, scope.width - 12, 14), text, AvionicsDraw.LabelSmall, est.canReach ? AvionicsDraw.Friendly : AvionicsDraw.Unknown);
         }
 
         static bool ShowOnScope(Contact c)

@@ -20,6 +20,19 @@ In flight (toolbar button "BDA Avionics", or Right Alt + key)
   Data link         Right Alt + L   link model, node paths and quality
   Settings          link model, track timing, map source, overlays
   Ejection seat     press P twice; auto-eject options in the menu
+  Threat warning    RWR strobes on the 3D radar, banner for launches/locks/inbound missiles (needs an RWR)
+  Weapon estimate   3D radar shows Rmax / time of flight / IN RANGE for the selected missile vs selected target
+  CM program        Keypad 0 runs the craft's countermeasure program (Auto mode runs it on inbound missiles)
+
+Missiles
+--------
+Flight estimator: simulates each missile (thrust, fuel burn, BDArmory drag, air density, gravity) for
+launch zones, IADS intercept times and site selection. Modular missiles are estimated from their parts (est.).
+Modular missiles can be mounted by any part (e.g. the booster): guidance follows the stage that carries it.
+Flight profile (modular missile part menu): per-stage guidance switching, and an ICBM profile
+(vertical rise, ballistic boost, engine cutoff when the predicted impact reaches the target, coast,
+then the missile's own guidance for the terminal dive). Use GPS targeting and a throttleable last stage.
+Data link mid-course: radar missiles keep getting target updates from any networked sensor.
 
 Tasking (console or map drawer): select a unit, then Patrol (click waypoints, Esc to finish),
 Move to, Strike GPS, Intercept (select a track first), Escort the active vessel, RTB, Release.
@@ -39,6 +52,7 @@ Every command part and weapon manager gets a "C4ISR data link" section in its pa
 role (Auto works it out), data link on/off, IADS member, radar EMCON override.
 The "C4ISR craft setup" toolbar button shows the craft's sensors, missiles, antennas,
 KerbNet parts and ejection seats, the role it will get, and warnings.
+Weapon managers also get a "Countermeasure program" section (Off/Manual/Auto, flares and chaff per burst,
+bursts, salvos, intervals, trigger time) and modular missile guidance parts a "Missile flight profile" section.
 
 Settings file: GameData/BDArmoryAvionics/PluginData/Avionics.cfg
-(moved automatically from GameData/BDArmory/PluginData/Avionics.cfg if found)

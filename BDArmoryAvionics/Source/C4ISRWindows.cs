@@ -85,8 +85,7 @@ namespace BDArmory.Avionics
                     for (int c = 0; c < siteList.Count; c++)
                     {
                         var s = siteList[c];
-                        float range = (t.position - s.node.vessel.CoM).magnitude;
-                        bool inRange = range <= s.node.maxMissileRange;
+                        bool inRange = IADSController.CanReach(s, t);
                         string cell = inRange ? $"{IADSController.TimeToIntercept(s, t):F0}{(s.assigned == t ? (s.LaunchingOnRemote ? " LOR" : " ◆") : "")}" : "—";
                         GUI.enabled = inRange && s.node.IsShooter;
                         if (GUI.Button(new Rect(labelW + 50 + c * colW, y, colW - 4, rowH - 2), cell, s.assigned == t ? sel : btn))
@@ -204,7 +203,7 @@ namespace BDArmory.Avionics
             if (GUI.Button(new Rect(r.width - 20, 2, 18, 18), " X", BDArmorySetup.CloseButtonStyle)) { C4ISRSettings.ShowSettings = false; AvionicsSettings.Save(); return; }
             var btn = BDArmorySetup.ButtonStyle; var sel = BDArmorySetup.SelectedButtonStyle;
             float w = r.width - 30;
-            scroll = GUI.BeginScrollView(new Rect(6, 22, r.width - 12, r.height - 30), scroll, new Rect(0, 0, w, 760));
+            scroll = GUI.BeginScrollView(new Rect(6, 22, r.width - 12, r.height - 30), scroll, new Rect(0, 0, w, 900));
             float x = 0, y = 0;
 
             Head(x, ref y, w, "COMMAND & CONTROL");
@@ -215,6 +214,7 @@ namespace BDArmory.Avionics
             y += 24;
             Slider(x, ref y, w, ref C4ISRSettings.LOSLinkRangeKm, 10, 1000, "Line-of-sight link range", "km");
             C4ISRSettings.RequireAntenna = IADSWindow.Toggle(x, ref y, w, C4ISRSettings.RequireAntenna, "CommNet: craft without a connection are cut off");
+            C4ISRSettings.DataLinkMidcourse = IADSWindow.Toggle(x, ref y, w, C4ISRSettings.DataLinkMidcourse, "Mid-course updates for radar missiles");
 
             Head(x, ref y, w, "TRACKS");
             Slider(x, ref y, w, ref C4ISRSettings.NetUpdateHz, 1, 10, "Network update rate", "Hz");
@@ -235,6 +235,10 @@ namespace BDArmory.Avionics
             C4ISRSettings.ShowMapOverlay = IADSWindow.Toggle(x, ref y, w, C4ISRSettings.ShowMapOverlay, "C2 overlay in map view");
             C4ISRSettings.OverlayLinks = IADSWindow.Toggle(x, ref y, w, C4ISRSettings.OverlayLinks, "Draw data links in map view");
             C4ISRSettings.OverlayRings = IADSWindow.Toggle(x, ref y, w, C4ISRSettings.OverlayRings, "Draw SAM rings in map view");
+
+            Head(x, ref y, w, "THREAT WARNING");
+            AvionicsSettings.ThreatBanner = IADSWindow.Toggle(x, ref y, w, AvionicsSettings.ThreatBanner, "Missile / lock warning banner");
+            AvionicsSettings.Radar3DShowThreats = IADSWindow.Toggle(x, ref y, w, AvionicsSettings.Radar3DShowThreats, "Threat strobes on the 3D radar");
 
             Head(x, ref y, w, "KEYS (with Right Alt)");
             AvionicsDraw.ColorLabel(new Rect(x, y, w, 60), $"Console: {C4ISRSettings.KeyC2Window}   IADS: {C4ISRSettings.KeyIADSWindow}   Data link: {C4ISRSettings.KeyLinkWindow}\nEject: {AvionicsSettings.KeyEject} twice\nChange keys in PluginData/Avionics.cfg", AvionicsDraw.LabelSmall, AvionicsDraw.HudText);

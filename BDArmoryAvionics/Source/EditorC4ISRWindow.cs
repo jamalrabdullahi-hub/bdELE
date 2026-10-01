@@ -4,6 +4,7 @@ using KSP.UI.Screens;
 using UnityEngine;
 
 using BDArmory.Control;
+using BDArmory.CounterMeasure;
 using BDArmory.Radar;
 using BDArmory.UI;
 using BDArmory.Weapons;
@@ -33,6 +34,9 @@ namespace BDArmory.Avionics
             public double antennaPower;
             public readonly List<ModuleC4ISRTerminal> terms = new();
             public readonly List<string> warnings = new();
+            public int flares, chaff;
+            public readonly List<ModuleCMProgram> cmPrograms = new();
+            public readonly List<BDModularGuidance> modular = new();
         }
 
         void Start()
@@ -75,7 +79,10 @@ namespace BDArmory.Avionics
                     switch (m)
                     {
                         case ModuleC4ISRTerminal t: fit.terminals++; fit.terms.Add(t); break;
+                        case ModuleCMProgram cp: fit.cmPrograms.Add(cp); break;
+                        case CMDropper cm: if (cm.cmType == CMDropper.CountermeasureTypes.Flare) fit.flares++; else if (cm.cmType == CMDropper.CountermeasureTypes.Chaff) fit.chaff++; break;
                         case MissileFire: fit.wms++; break;
+                        case BDModularGuidance mmg: fit.modular.Add(mmg); fit.missiles++; fit.missileRange = Mathf.Max(fit.missileRange, mmg.GetEngageRange()); break;
                         case MissileBase mb: fit.missiles++; fit.missileRange = Mathf.Max(fit.missileRange, mb.GetEngageRange()); break;
                         case ModuleRadar r: fit.radars++; fit.radarRange = Mathf.Max(fit.radarRange, r.radarMaxDistanceDetect * 1000f); break;
                         case ModuleIRST: fit.irsts++; break;
@@ -97,6 +104,25 @@ namespace BDArmory.Avionics
             if (fit.kerbNet == 0) fit.warnings.Add("No KerbNet-capable part (probe core): no map imagery from this craft.");
             if (fit.missiles > 0 && fit.radars == 0 && fit.irsts == 0) fit.warnings.Add("Missiles but no sensors: needs another unit's track (launch on remote).");
             if (fit.crewParts > 0 && fit.crew == 0) fit.warnings.Add("Crewed parts are empty: nobody to eject.");
+            if (fit.cmPrograms.Count > 0 && fit.cmPrograms[0].Enabled && fit.flares + fit.chaff == 0) fit.warnings.Add("Countermeasure program is on but the craft has no flare or chaff dispensers.");
+            foreach (var mmg in fit.modular) CheckModular(mmg);
+        }
+
+        /// <summary>Modular missile checks: release decoupler, staging, and what the ICBM profile needs.</summary>
+        void CheckModular(BDModularGuidance mmg)
+        {
+            string name = mmg.part.partInfo != null ? mmg.part.partInfo.title : mmg.part.name;
+            var dec = BDModularGuidance.FindFirstDecoupler(mmg.part.parent, null);
+            if (dec == null) { fit.warnings.Add($"{name}: no decoupler above the guidance part, so the missile can't be released."); return; }
+            var prof = ModuleMissileProfile.For(mmg);
+            if (prof == null || !prof.IsICBM) return;
+            bool throttleable = false; // solid boosters are fine for early stages; the last stage must be able to cut off
+            foreach (var p in MissileEstimator.MissileParts(mmg))
+                foreach (var e in p.FindModulesImplementing<ModuleEngines>())
+                    if (!e.throttleLocked) throttleable = true;
+            if (!throttleable) fit.warnings.Add($"{name}: ICBM profile but no throttleable engine. Solid motors can't be cut off, so range control will be poor.");
+            if (mmg.TargetingMode != MissileBase.TargetingModes.Gps && mmg.TargetingMode != MissileBase.TargetingModes.Inertial)
+                fit.warnings.Add($"{name}: ICBM profile works best with GPS targeting.");
         }
 
         void OnGUI()
@@ -112,7 +138,7 @@ namespace BDArmory.Avionics
             if (GUI.Button(new Rect(rect.width - 20, 2, 18, 18), " X", BDArmorySetup.CloseButtonStyle)) { show = false; button?.SetFalse(false); EditorLogic.fetch?.Unlock("BDAC4ISREditor"); return; }
             var btn = BDArmorySetup.ButtonStyle; var sel = BDArmorySetup.SelectedButtonStyle;
             float w = rect.width - 34;
-            scroll = GUI.BeginScrollView(new Rect(6, 22, rect.width - 12, rect.height - 28), scroll, new Rect(0, 0, w, 760));
+            scroll = GUI.BeginScrollView(new Rect(6, 22, rect.width - 12, rect.height - 28), scroll, new Rect(0, 0, w, 1200));
             float y = 0;
 
             if (fit.parts == 0) { AvionicsDraw.ColorLabel(new Rect(0, y, w, 16), "No craft loaded.", AvionicsDraw.Label, AvionicsDraw.ScopeText); GUI.EndScrollView(); GUI.DragWindow(); return; }
@@ -153,6 +179,42 @@ namespace BDArmory.Avionics
                     if (GUI.Button(new Rect(i * (ew + 4), y, ew, 20), mode, t0.emcon == mode ? sel : btn)) foreach (var t in fit.terms) t.emcon = mode;
                 }
                 y += 26;
+            }
+
+            if (fit.cmPrograms.Count > 0)
+            {
+                var p0 = fit.cmPrograms[0];
+                Head(ref y, w, "COUNTERMEASURE PROGRAM");
+                Line(ref y, w, $"Dispensers: {fit.flares} flare, {fit.chaff} chaff");
+                float mw = (w - 8) / 3;
+                for (int i = 0; i < ModuleCMProgram.Modes.Length; i++)
+                {
+                    var mode = ModuleCMProgram.Modes[i];
+                    if (GUI.Button(new Rect(i * (mw + 4), y, mw, 20), mode, p0.mode == mode ? sel : btn)) foreach (var p in fit.cmPrograms) p.mode = mode;
+                }
+                y += 24;
+                Line(ref y, w, $"{p0.salvos:F0} salvos × {p0.bursts:F0} bursts ({p0.flaresPerBurst:F0} flares / {p0.chaffPerBurst:F0} chaff), at {p0.triggerTime:F1} s to impact");
+                AvionicsDraw.ColorLabel(new Rect(0, y, w, 14), "Fine-tune in the weapon manager's part menu.", AvionicsDraw.LabelSmall, AvionicsDraw.ScopeText); y += 16;
+            }
+
+            if (fit.modular.Count > 0)
+            {
+                Head(ref y, w, "MODULAR MISSILES");
+                foreach (var mmg in fit.modular)
+                {
+                    var prof = ModuleMissileProfile.For(mmg);
+                    string name = mmg.part.partInfo != null ? mmg.part.partInfo.title : mmg.part.name;
+                    if (name.Length > 22) name = name.Substring(0, 22);
+                    Line(ref y, w, $"{name}: {mmg.StagesNumber:F0} stages, {mmg.GuidanceLabel}");
+                    if (prof != null)
+                    {
+                        if (GUI.Button(new Rect(0, y, w / 2 - 2, 20), "Standard", !prof.IsICBM ? sel : btn)) prof.profile = "Standard";
+                        if (GUI.Button(new Rect(w / 2 + 2, y, w / 2 - 2, 20), "ICBM", prof.IsICBM ? sel : btn)) prof.profile = "ICBM";
+                        y += 24;
+                    }
+                }
+                AvionicsDraw.ColorLabel(new Rect(0, y, w, 28), "Mount the missile by any part (e.g. its booster);\nguidance follows the stage that carries it.", AvionicsDraw.LabelSmall, AvionicsDraw.ScopeText);
+                y += 30;
             }
 
             if (fit.warnings.Count > 0)

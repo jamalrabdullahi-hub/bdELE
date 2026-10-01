@@ -30,11 +30,12 @@ namespace BDArmory.Avionics
             if (Instance != null) { Destroy(this); return; }
             Instance = this;
             AvionicsSettings.Load();
+            ThreatWarning.Subscribe();
         }
 
         void Start()
         {
-            menuRect = new Rect(Screen.width - 300, 90, 240, 420);
+            menuRect = new Rect(Screen.width - 300, 90, 240, 444);
             radarRectIndex = GUIUtils.RegisterGUIRect(new Rect());
             listRectIndex = GUIUtils.RegisterGUIRect(new Rect());
             gpsRectIndex = GUIUtils.RegisterGUIRect(new Rect());
@@ -56,6 +57,7 @@ namespace BDArmory.Avionics
         void OnDestroy()
         {
             AvionicsSettings.Save();
+            ThreatWarning.Unsubscribe();
             if (toolbarButton != null && ApplicationLauncher.Instance != null)
                 ApplicationLauncher.Instance.RemoveModApplication(toolbarButton);
             foreach (var i in new[] { radarRectIndex, listRectIndex, gpsRectIndex, menuRectIndex })
@@ -94,6 +96,7 @@ namespace BDArmory.Avionics
         {
             if (!HighLogic.LoadedSceneIsFlight) return;
             AvionicsContacts.Refresh();
+            ThreatWarning.Refresh();
 
             UpdateRect(radarRectIndex, AvionicsSettings.Radar3DRect, AvionicsSettings.ShowRadar3D);
             UpdateRect(listRectIndex, AvionicsSettings.TargetListRect, AvionicsSettings.ShowTargetList);
@@ -133,6 +136,7 @@ namespace BDArmory.Avionics
             if (MapView.MapIsEnabled) GPSMarkers.DrawMap();
             else GPSMarkers.DrawFlight();
             GPSMarkers.DrawDropHint();
+            ThreatWarning.DrawBanner();
 
             var skin = BDArmorySetup.BDGuiSkin;
             if (showMenu)
@@ -175,7 +179,8 @@ namespace BDArmory.Avionics
             AvionicsSettings.ShowGPSManager = GUI.Toggle(new Rect(8, y, w, 22), AvionicsSettings.ShowGPSManager, "GPS Manager", AvionicsSettings.ShowGPSManager ? sel : btn); y += 28;
             AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), $"Ejection seat: press {AvionicsSettings.KeyEject} twice", AvionicsDraw.Header, AvionicsDraw.HudText); y += 16;
             AvionicsSettings.AutoEjectOnDestruction = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.AutoEjectOnDestruction, "Auto-eject if cockpit destroyed", AvionicsSettings.AutoEjectOnDestruction ? sel : btn); y += 22;
-            AvionicsSettings.AutoEjectBeforeImpact = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.AutoEjectBeforeImpact, "Auto-eject before ground impact", AvionicsSettings.AutoEjectBeforeImpact ? sel : btn); y += 26;
+            AvionicsSettings.AutoEjectBeforeImpact = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.AutoEjectBeforeImpact, "Auto-eject before ground impact", AvionicsSettings.AutoEjectBeforeImpact ? sel : btn); y += 22;
+            AvionicsSettings.ThreatBanner = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.ThreatBanner, "Missile / lock warning banner", AvionicsSettings.ThreatBanner ? sel : btn); y += 26;
             var small = AvionicsDraw.LabelSmall;
 
             // C4ISR

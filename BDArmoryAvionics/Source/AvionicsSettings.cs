@@ -74,10 +74,15 @@ namespace BDArmory.Avionics
         public static KeyCode KeyLockTarget = KeyCode.Keypad5;
         public static KeyCode KeySlewCamera = KeyCode.Keypad8;
         public static KeyCode KeyEject = KeyCode.P; // press twice
+        public static KeyCode KeyCMProgram = KeyCode.Keypad0; // run the craft's countermeasure program
 
         // Ejection seats
         public static bool AutoEjectOnDestruction = true;
         public static bool AutoEjectBeforeImpact = true;
+
+        // Threat warning
+        public static bool ThreatBanner = true;
+        public static bool Radar3DShowThreats = true;
 
         public static readonly float[] Radar3DRanges = [2000, 5000, 10000, 20000, 40000, 80000, 160000, 320000];
         public static readonly float[] AltScales = [1, 2, 4, 8];
@@ -135,6 +140,9 @@ namespace BDArmory.Avionics
                 KeyEject = GetKey(node, "KeyEject", KeyEject);
                 AutoEjectOnDestruction = GetBool(node, "AutoEjectOnDestruction", AutoEjectOnDestruction);
                 AutoEjectBeforeImpact = GetBool(node, "AutoEjectBeforeImpact", AutoEjectBeforeImpact);
+                KeyCMProgram = GetKey(node, "KeyCMProgram", KeyCMProgram);
+                ThreatBanner = GetBool(node, "ThreatBanner", ThreatBanner);
+                Radar3DShowThreats = GetBool(node, "Radar3DShowThreats", Radar3DShowThreats);
 
                 GPSGroups.Clear();
                 var groups = node.GetNode("GPS_GROUPS");
@@ -195,6 +203,9 @@ namespace BDArmory.Avionics
                 node.AddValue("KeyEject", KeyEject.ToString());
                 node.AddValue("AutoEjectOnDestruction", AutoEjectOnDestruction);
                 node.AddValue("AutoEjectBeforeImpact", AutoEjectBeforeImpact);
+                node.AddValue("KeyCMProgram", KeyCMProgram.ToString());
+                node.AddValue("ThreatBanner", ThreatBanner);
+                node.AddValue("Radar3DShowThreats", Radar3DShowThreats);
 
                 var groups = node.AddNode("GPS_GROUPS");
                 foreach (var kvp in GPSGroups)

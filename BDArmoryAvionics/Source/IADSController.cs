@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 using BDArmory.Competition;
+using BDArmory.Extensions;
 using BDArmory.Radar;
 using BDArmory.Targeting;
 using BDArmory.UI;
@@ -182,20 +183,22 @@ namespace BDArmory.Avionics
             {
                 if (AssignedTo(iads, t) != null) continue;
                 if (C4ISRSettings.ShootLookShoot && MissilesInFlight(iads, t) > 0) continue; // look before shooting again
+                // Pick the site that gets a missile there soonest.
                 Site best = null;
-                float bestRange = float.MaxValue;
+                float bestTime = float.MaxValue;
                 foreach (var s in iads.sites.Values)
                 {
                     if (s.assigned != null || !s.node.connected || !s.node.IsShooter || s.node.wm == null || !s.node.wm.guardMode) continue;
-                    float r = Range(s, t);
-                    if (r > s.node.maxMissileRange || r >= bestRange) continue;
+                    if (!CanReach(s, t)) continue;
+                    float tti = TimeToIntercept(s, t);
+                    if (tti >= bestTime) continue;
                     best = s;
-                    bestRange = r;
+                    bestTime = tti;
                 }
                 if (best == null) continue;
                 best.assigned = t;
                 best.manual = false;
-                iads.Log($"{best.node.Name} assigned {t.Label} ({t.Name}), {bestRange / 1000f:F0} km");
+                iads.Log($"{best.node.Name} assigned {t.Label} ({t.Name}), {Range(best, t) / 1000f:F0} km, intercept in {bestTime:F0} s");
             }
         }
 
@@ -216,7 +219,27 @@ namespace BDArmory.Avionics
 
         static float Range(Site s, NetTrack t) => (t.position - s.node.vessel.CoM).magnitude;
 
-        public static float TimeToIntercept(Site s, NetTrack t) => Range(s, t) / MissileAvgSpeed;
+        static MissileEstimate EstimateFor(Site s, NetTrack t)
+        {
+            var m = MissileEstimator.BestMissile(s.node.vessel);
+            if (m == null || t.vessel == null) return default;
+            return MissileEstimator.Estimate(m, s.node.vessel.CoM, s.node.vessel.Velocity(), t.position, t.velocity, targetId: t.vessel.persistentId);
+        }
+
+        /// <summary>Time for the site's best missile to reach the track (flight estimator; flat average speed if it has no model).</summary>
+        public static float TimeToIntercept(Site s, NetTrack t)
+        {
+            var e = EstimateFor(s, t);
+            return e.valid ? e.timeOfFlight : Range(s, t) / MissileAvgSpeed;
+        }
+
+        /// <summary>Can the site's best missile reach the track with energy to spare? Falls back to the missile's rated range.</summary>
+        public static bool CanReach(Site s, NetTrack t)
+        {
+            if (Range(s, t) > s.node.maxMissileRange * 1.5f) return false; // cheap reject before simulating
+            var e = EstimateFor(s, t);
+            return e.valid ? e.canReach : Range(s, t) <= s.node.maxMissileRange;
+        }
 
         /// <summary>Player tasking: give a track to a site (null track clears it).</summary>
         public static void Assign(BDTeam team, Vessel site, NetTrack track)

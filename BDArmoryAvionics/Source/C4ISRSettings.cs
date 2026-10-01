@@ -15,6 +15,7 @@ namespace BDArmory.Avionics
         public static bool GlobalC2 = true;            // whole team linked, no range limit
         public static LinkModel LinkModel = LinkModel.CommNet; // used when GlobalC2 is off
         public static float LOSLinkRangeKm = 150f;
+        public static bool DataLinkMidcourse = true;   // radar missiles get target updates from any networked sensor
         public static bool RequireAntenna = true;      // CommNet model: a vessel with no CommNet connection is cut off
 
         // Tracks
@@ -74,6 +75,7 @@ namespace BDArmory.Avionics
             IADSForAITeams = Get(n, nameof(IADSForAITeams), IADSForAITeams);
             IADSAutoAssign = Get(n, nameof(IADSAutoAssign), IADSAutoAssign);
             LaunchOnRemote = Get(n, nameof(LaunchOnRemote), LaunchOnRemote);
+            DataLinkMidcourse = Get(n, nameof(DataLinkMidcourse), DataLinkMidcourse);
             ShootLookShoot = Get(n, nameof(ShootLookShoot), ShootLookShoot);
             EngageMissiles = Get(n, nameof(EngageMissiles), EngageMissiles);
             Salvo = Mathf.Clamp((int)Get(n, nameof(Salvo), (float)Salvo), 1, 8);
@@ -115,6 +117,7 @@ namespace BDArmory.Avionics
             n.AddValue(nameof(IADSForAITeams), IADSForAITeams);
             n.AddValue(nameof(IADSAutoAssign), IADSAutoAssign);
             n.AddValue(nameof(LaunchOnRemote), LaunchOnRemote);
+            n.AddValue(nameof(DataLinkMidcourse), DataLinkMidcourse);
             n.AddValue(nameof(ShootLookShoot), ShootLookShoot);
             n.AddValue(nameof(EngageMissiles), EngageMissiles);
             n.AddValue(nameof(Salvo), Salvo);
