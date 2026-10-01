@@ -155,16 +155,8 @@ namespace BDArmory.Avionics
             if (s != 1) GUIUtility.ScaleAroundPivot(s * Vector2.one, rect.position);
             rect = GUI.Window(id, rect, func, title, skin.window);
             GUI.matrix = m;
-            return KeepOnScreen(rect);
-        }
-
-        /// <summary>Keep at least part of a window on screen so it can always be dragged back.</summary>
-        public static Rect KeepOnScreen(Rect r)
-        {
-            float s = BDArmorySettings.UI_SCALE_ACTUAL;
-            r.x = Mathf.Clamp(r.x, 40 - r.width * s, Screen.width - 40);
-            r.y = Mathf.Clamp(r.y, 0, Screen.height - 30);
-            return r;
+            BDAHooks.KeepOnScreen(ref rect);
+            return rect;
         }
 
         void MenuWindow(int id)
@@ -205,7 +197,7 @@ namespace BDArmory.Avionics
             y += 17;
             AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), "FLIR and the pod HUD are controlled from", small, AvionicsDraw.ScopeText); y += 13;
             AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), "the bottom of the Target Camera window.", small, AvionicsDraw.ScopeText); y += 16;
-            AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), "Keys are set in PluginData/Avionics.cfg", small, AvionicsDraw.ScopeText);
+            AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), "Keys: BDArmoryAvionics/PluginData/Avionics.cfg", small, AvionicsDraw.ScopeText);
             GUIUtils.DragWindow();
         }
     }

@@ -8,6 +8,8 @@ Optional: SCANsat (scanned-coverage maps).
 
 Install: copy this BDArmoryAvionics folder into GameData.
 Remove: delete GameData/BDArmoryAvionics. Craft files keep working (the terminal module is just dropped).
+Replaces BD Targeting Expansion: do not install both (they share the toolbar, camera window and P-P eject).
+Settings are read once from BDTargetingExpansion/PluginData/Settings.cfg or BDArmory/PluginData/Avionics.cfg if this mod has none yet.
 
 In flight (toolbar button "BDA Avionics", or Right Alt + key)
 -------------------------------------------------------------

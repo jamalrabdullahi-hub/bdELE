@@ -7,12 +7,29 @@ namespace BDArmory.Avionics
 {
     /// <summary>
     /// Settings for the avionics windows (3D radar, target list, GPS manager, FLIR, TGP HUD).
-    /// Stored in GameData/BDArmoryAvionics/PluginData/Avionics.cfg.
+    /// Stored in GameData/BDArmoryAvionics/PluginData/Avionics.cfg (never in BDArmory's folder).
     /// </summary>
     public static class AvionicsSettings
     {
         static string SettingsPath => Path.Combine(KSPUtil.ApplicationRootPath, "GameData/BDArmoryAvionics/PluginData/Avionics.cfg");
-        static string OldSettingsPath => Path.Combine(KSPUtil.ApplicationRootPath, "GameData/BDArmory/PluginData/Avionics.cfg"); // before the mod had its own folder
+
+        // Settings written by earlier builds of these features; read once if this mod has no settings file yet.
+        static readonly string[] LegacyPaths =
+        [
+            "GameData/BDTargetingExpansion/PluginData/Settings.cfg",
+            "GameData/BDArmory/PluginData/Avionics.cfg",
+        ];
+
+        static string LoadPath()
+        {
+            if (File.Exists(SettingsPath)) return SettingsPath;
+            foreach (var p in LegacyPaths)
+            {
+                var full = Path.Combine(KSPUtil.ApplicationRootPath, p);
+                if (File.Exists(full)) return full;
+            }
+            return null;
+        }
 
         // Windows
         public static bool ShowRadar3D = false;
@@ -71,19 +88,11 @@ namespace BDArmory.Avionics
         {
             if (loaded) return;
             loaded = true;
+            var path = LoadPath();
+            if (path == null) return;
             try
             {
-                if (!File.Exists(SettingsPath) && File.Exists(OldSettingsPath))
-                {
-                    Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath));
-                    File.Move(OldSettingsPath, SettingsPath);
-                }
-            }
-            catch (Exception e) { Debug.LogWarning($"[BDArmory.Avionics]: Couldn't move the old settings file: {e.Message}"); }
-            if (!File.Exists(SettingsPath)) return;
-            try
-            {
-                var root = ConfigNode.Load(SettingsPath);
+                var root = ConfigNode.Load(path);
                 C4ISRSettings.Load(root?.GetNode("C4ISR"));
                 var node = root?.GetNode("AVIONICS");
                 if (node == null) return;
@@ -138,7 +147,7 @@ namespace BDArmory.Avionics
             }
             catch (Exception e)
             {
-                Debug.LogWarning($"[BDArmory.Avionics]: Failed to load {SettingsPath}: {e.Message}");
+                Debug.LogWarning($"[BDArmoryAvionics]: Failed to load {path}: {e.Message}");
             }
         }
 
@@ -194,12 +203,13 @@ namespace BDArmory.Avionics
 
                 C4ISRSettings.Save(root.AddNode("C4ISR"));
 
+
                 Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath));
                 root.Save(SettingsPath);
             }
             catch (Exception e)
             {
-                Debug.LogWarning($"[BDArmory.Avionics]: Failed to save {SettingsPath}: {e.Message}");
+                Debug.LogWarning($"[BDArmoryAvionics]: Failed to save {SettingsPath}: {e.Message}");
             }
         }
 

@@ -29,6 +29,10 @@ namespace BDArmory.Avionics
             var btn = BDArmorySetup.ButtonStyle;
             float y = img.yMax - 22;
             float x = img.x + img.width * 0.30f;
+            // BDArmory starts a mouse slew on any click inside the image (before this overlay runs), so undo that for clicks on these buttons.
+            var e = Event.current;
+            if (e.type == EventType.MouseDown && new Rect(x, y, 240, 18).Contains(e.mousePosition))
+                BDAHooks.CancelCameraSlew();
             if (GUI.Button(new Rect(x, y, 78, 18), $"FLIR {FLIRModes.ModeName}", FLIRModes.Active ? BDArmorySetup.SelectedButtonStyle : btn))
                 AvionicsSettings.FLIRMode = (AvionicsSettings.FLIRMode + 1) % 4;
             x += 80;
