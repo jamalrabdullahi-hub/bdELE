@@ -34,6 +34,15 @@ Flight profile (modular missile part menu): per-stage guidance switching, and an
 then the missile's own guidance for the terminal dive). Use GPS targeting and a throttleable last stage.
 Data link mid-course: radar missiles keep getting target updates from any networked sensor.
 
+Infernal Robotics turrets (optional, needs Infernal Robotics Next)
+------------------------------------------------------------------
+Every IR servo gets a "BDA turret control" part-menu section. Put a turret's rotating servos (e.g. a rotator
+for yaw and a hinge for pitch) in the same turret group and mount a gun, missile launcher or camera at the tip.
+The group aims it at: the guard-mode target (using BDArmory's own lead and bullet drop), the radar lock, the
+targeting camera's point, or the selected contact ("Auto" = first available in that order).
+In guard mode BDArmory fires the gun once it's on target, including against aircraft from the ground.
+Each servo learns its turning direction in the first second of movement ("learning" in its status).
+
 Tasking (console or map drawer): select a unit, then Patrol (click waypoints, Esc to finish),
 Move to, Strike GPS, Intercept (select a track first), Escort the active vessel, RTB, Release.
 ROE: Hold fire / Weapons free (= guard mode off / on). SAM sites must be in guard mode for IADS.
