@@ -1,0 +1,78 @@
+#######################################
+BDArmory Ignore
+#######################################
+*.user
+*.userprefs
+_LocalDev
+LocalDev
+
+# Generated or local folders and files
+.envrc
+.env
+.vscode
+**/.vs
+**/obj
+**/bin
+**/*.[Cc]ache*
+**/packages*
+**/UpgradeLog*
+
+BDArmory/Distribution/GameData/BDArmory/Plugins/
+
+#######################################
+Unity Ignore
+#######################################
+
+TrackIRUnity.dll
+Mono*
+TDx*
+*.pdb
+*.jar
+*.bat
+*.zip
+KSPCore.dll
+KSPUtil.dll
+SaveUpgradePipeline.Core.dll
+UnityEngine.xml
+Vectrosity.dll
+
+#######################################
+#######################################
+System*
+mscorlib.dll
+
+# Windows image file caches
+Thumbs.db
+ehthumbs.db
+
+# Folder config file
+Desktop.ini
+
+# Recycle Bin used on file shares
+$RECYCLE.BIN/
+
+# Windows Installer files
+*.cab
+*.msi
+*.msm
+*.msp
+
+# =========================
+# Operating System Files
+# =========================
+
+# OSX
+# =========================
+
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Icon must ends with two \r.
+Icon
+# Thumbnails
+._*
+
+# Files that might appear on external disk
+.Spotlight-V100
+.Trashes

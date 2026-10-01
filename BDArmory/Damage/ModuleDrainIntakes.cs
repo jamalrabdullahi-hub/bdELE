@@ -1,0 +1,54 @@
+using UnityEngine;
+
+using BDArmory.Utils;
+using BDArmory.Control;
+
+namespace BDArmory.Damage
+{
+    public class ModuleDrainIntakes : BDAPartModule
+    {
+        public float drainRate = 999;
+        public float drainDuration = 20;
+        private bool initialized = false;
+
+        public void Update()
+        {
+            if (HighLogic.LoadedSceneIsFlight)
+            {
+                drainDuration -= Time.deltaTime;
+                if (drainDuration <= 0)
+                {
+                    using (var intake = VesselModuleRegistry.GetModules<ModuleResourceIntake>(vessel).GetEnumerator())
+                        while (intake.MoveNext())
+                        {
+                            if (intake.Current == null) continue;
+                            intake.Current.intakeEnabled = true;
+                        }
+                    var WM = VesselModuleRegistry.GetMissileFire(vessel);
+                    if (WM != null)
+                    {
+                        WM.debilitated = false; //for weapon selection and targeting;
+                    }
+                    part.RemoveModule(this);
+                }
+            }
+            if (!initialized)
+            {
+                //Debug.Log("[BDArmory.ModuleDrainIntakes]: " + this.part.name + "choked!");
+                initialized = true;
+                using (var intake = VesselModuleRegistry.GetModules<ModuleResourceIntake>(vessel).GetEnumerator())
+                    while (intake.MoveNext())
+                    {
+                        if (intake.Current == null) continue;
+                        intake.Current.intakeEnabled = false;
+                    }
+                var WM = VesselModuleRegistry.GetMissileFire(vessel);
+                if (WM != null)
+                {
+                    WM.debilitated = true; //for weapon selection and targeting;
+                }
+            }
+        }
+    }
+}
+
