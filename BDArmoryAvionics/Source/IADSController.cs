@@ -21,6 +21,8 @@ namespace BDArmory.Avionics
     {
         public static IADSController Instance;
         public static readonly Dictionary<BDTeam, TeamIADS> Teams = new();
+        /// <summary>Checked by the ModuleRadar.EnableRadar Harmony prefix: true keeps the radar off.</summary>
+        public static System.Func<ModuleRadar, bool> EmconBlocked;
         const float UpdateInterval = 0.5f;
         const float MissileAvgSpeed = 800f; // rough, for time-to-intercept until the flight estimator exists
 
@@ -60,12 +62,12 @@ namespace BDArmory.Avionics
             Instance = this;
             AvionicsSettings.Load();
             Teams.Clear();
-            ModuleRadar.EmconBlocked = RadarBlocked;
+            EmconBlocked = RadarBlocked;
         }
 
         void OnDestroy()
         {
-            if (ModuleRadar.EmconBlocked == RadarBlocked) ModuleRadar.EmconBlocked = null;
+            if (EmconBlocked == RadarBlocked) EmconBlocked = null;
             foreach (var t in Teams.Values) foreach (var s in t.sites.Values) Release(s);
             Teams.Clear();
             if (Instance == this) Instance = null;
@@ -111,12 +113,12 @@ namespace BDArmory.Avionics
             foreach (var kv in iads.sites)
             {
                 var n = net.Node(kv.Key);
-                if (n == null || n.role != NodeRole.SAM) gone.Add(kv.Key);
+                if (n == null || !IsSite(n)) gone.Add(kv.Key);
             }
             foreach (var v in gone) { Release(iads.sites[v]); iads.sites.Remove(v); }
             foreach (var n in net.nodes)
             {
-                if (n.role != NodeRole.SAM) continue;
+                if (!IsSite(n)) continue;
                 if (!iads.sites.TryGetValue(n.vessel, out var s)) { iads.sites[n.vessel] = s = new Site(); iads.Log($"{n.Name} joined the IADS"); }
                 s.node = n;
                 if (s.assigned != null && (s.assigned.vessel == null || !net.tracks.ContainsValue(s.assigned)))
@@ -293,6 +295,8 @@ namespace BDArmory.Avionics
         {
             if (n.vessel == null || n.wm == null) return;
             if (IsPlayerFlown(n)) return;
+            var ov = EmconOverride(n);
+            if (ov.HasValue) allowed = ov.Value;
             foreach (var r in Utils.VesselModuleRegistry.GetModules<ModuleRadar>(n.vessel))
             {
                 if (r == null || r.sonarMode != ModuleRadar.SonarModes.None) continue;
@@ -300,6 +304,11 @@ namespace BDArmory.Avionics
                 else if (allowed && !r.radarEnabled && n.wm.guardMode) r.EnableRadar();
             }
         }
+
+        static bool IsSite(NetNode n) => n != null && n.role == NodeRole.SAM && (n.terminal == null || n.terminal.iadsMember);
+
+        /// <summary>Per-craft EMCON set on the data link terminal: true = always allowed, false = always silent, null = team EMCON.</summary>
+        static bool? EmconOverride(NetNode n) => n.terminal == null ? null : n.terminal.emcon == "Always on" ? true : n.terminal.emcon == "Silent" ? false : null;
 
         static bool IsPlayerFlown(NetNode n) => n.vessel == FlightGlobals.ActiveVessel && (n.wm == null || !n.wm.guardMode);
 
@@ -317,7 +326,7 @@ namespace BDArmory.Avionics
         static void Unlink(Site s)
         {
             if (s.linkedSensor != null && s.node?.vrd != null && s.node.vrd.IsLinkedVRD(s.linkedSensor))
-                s.node.vrd.UnlinkVRD(s.linkedSensor);
+                s.node.vrd.UnlinkExternalVRD(s.linkedSensor);
             s.linkedSensor = null;
         }
 
@@ -330,6 +339,8 @@ namespace BDArmory.Avionics
             var net = DataLinkNetwork.For(wm.Team);
             var n = net?.Node(r.vessel);
             if (n == null || IsPlayerFlown(n)) return false;
+            var ov = EmconOverride(n);
+            if (ov.HasValue) return !ov.Value;
             if (n.role == NodeRole.EWR || n.role == NodeRole.AEW) return C4ISRSettings.Emcon == EmconLevel.D_Silent;
             if (n.role != NodeRole.SAM) return false;
             var s = For(wm.Team)?.SiteFor(r.vessel);

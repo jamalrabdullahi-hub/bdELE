@@ -108,9 +108,9 @@ namespace BDArmory.Avionics
             var vrd = WM.vesselRadarData;
 
             // Radar (own + data-linked)
-            if (vrd != null && vrd.DisplayedTargets != null)
+            if (vrd != null && vrd.DisplayedTargets() != null)
             {
-                var list = vrd.DisplayedTargets;
+                var list = vrd.DisplayedTargets();
                 Vessel activeLockVessel = null;
                 if (vrd.locked && vrd.numLockedTargets > 0)
                 {
@@ -129,9 +129,9 @@ namespace BDArmory.Avionics
             }
 
             // IRST (own + data-linked)
-            if (vrd != null && vrd.DisplayedIRTargets != null)
+            if (vrd != null && vrd.DisplayedIRTargets() != null)
             {
-                var list = vrd.DisplayedIRTargets;
+                var list = vrd.DisplayedIRTargets();
                 for (int i = 0; i < list.Count; i++)
                 {
                     var t = list[i];

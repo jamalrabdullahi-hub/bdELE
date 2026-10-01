@@ -12,7 +12,7 @@ using BDArmory.Weapons.Missiles;
 
 namespace BDArmory.Avionics
 {
-    public enum NodeRole { Fighter, AEW, SAM, EWR, Ground, Ship }
+    public enum NodeRole { Fighter, AEW, SAM, EWR, HQ, Ground, Ship }
     public enum LinkPath { None, Global, Direct, Relay }
 
     /// <summary>A team vessel with a weapon manager taking part in the data link.</summary>
@@ -21,6 +21,7 @@ namespace BDArmory.Avionics
         public Vessel vessel;
         public MissileFire wm;
         public VesselRadarData vrd;
+        public ModuleC4ISRTerminal terminal; // null: automatic settings
         public NodeRole role;
         public LinkPath path;
         public int hops;
@@ -36,7 +37,9 @@ namespace BDArmory.Avionics
         public float radarRange;       // metres, longest detection range of any radar
 
         public string Name => vessel != null ? vessel.GetName() : "(lost)";
-        public bool IsShooter => role == NodeRole.SAM && readyMissiles > 0;
+        public bool IsShooter => role == NodeRole.SAM && readyMissiles > 0 && (terminal == null || terminal.iadsMember);
+        public bool LinkEnabled => terminal == null || terminal.dataLink;
+        public bool IsAir => role == NodeRole.Fighter || role == NodeRole.AEW;
         public bool IsSensor => hasRadar && (role == NodeRole.EWR || role == NodeRole.AEW);
     }
 
@@ -151,6 +154,7 @@ namespace BDArmory.Avionics
                 if (!nodeCache.TryGetValue(v, out var node)) nodeCache[v] = node = new NetNode { vessel = v };
                 node.wm = wm;
                 node.vrd = wm.vesselRadarData != null ? wm.vesselRadarData : v.gameObject.GetComponent<VesselRadarData>();
+                node.terminal = ModuleC4ISRTerminal.For(v, wm.part);
                 Survey(node);
                 net.nodes.Add(node);
                 seen.Add(v);
@@ -162,7 +166,11 @@ namespace BDArmory.Avionics
             foreach (var net in Networks.Values)
             {
                 Connect(net);
+                foreach (var n in net.nodes) if (!n.LinkEnabled) SetLink(n, false, LinkPath.None, 0, 0, 0); // switched off on the terminal
                 FuseTracks(net);
+                foreach (var n in net.nodes)
+                    if (n.terminal != null)
+                        n.terminal.status = !n.LinkEnabled ? "Off" : !n.connected ? "No link" : $"{n.role}, {n.path}, {n.trackCount} trk";
             }
         }
 
@@ -202,6 +210,14 @@ namespace BDArmory.Avionics
                 foreach (var w in VesselModuleRegistry.GetModules<Weapons.ModuleWeapon>(v)) { if (w != null) { guns = true; break; } }
                 n.role = n.hasRadar && n.readyMissiles == 0 && !guns ? NodeRole.AEW : NodeRole.Fighter;
             }
+            if (n.terminal != null && n.terminal.HasRoleOverride) n.role = n.terminal.RoleOverride;
+        }
+
+        /// <summary>The role a craft would get in flight, for the editor window (no vessel yet, so landed/flying is a parameter).</summary>
+        public static NodeRole PredictRole(bool onSurface, bool splashed, int missiles, bool radar, bool guns)
+        {
+            if (onSurface) return missiles > 0 ? NodeRole.SAM : radar ? NodeRole.EWR : splashed ? NodeRole.Ship : NodeRole.Ground;
+            return radar && missiles == 0 && !guns ? NodeRole.AEW : NodeRole.Fighter;
         }
 
         // ---- Connectivity ----
@@ -329,7 +345,7 @@ namespace BDArmory.Avionics
             foreach (var n in net.nodes)
             {
                 if (!n.connected || n.vrd == null) continue;
-                var radar = n.vrd.DisplayedTargets;
+                var radar = n.vrd.DisplayedTargets();
                 if (radar != null)
                     for (int i = 0; i < radar.Count; i++)
                     {
@@ -341,7 +357,7 @@ namespace BDArmory.Avionics
                         t.byRadar = true;
                         if (t.bestRadarReporter == null || Dist(n, t) < Dist(t.bestRadarReporter, t)) t.bestRadarReporter = n;
                     }
-                var ir = n.vrd.DisplayedIRTargets;
+                var ir = n.vrd.DisplayedIRTargets();
                 if (ir != null)
                     for (int i = 0; i < ir.Count; i++)
                     {

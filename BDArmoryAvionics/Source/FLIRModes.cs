@@ -136,7 +136,7 @@ namespace BDArmory.Avionics
         {
             if (!Active || !AvionicsSettings.FLIRHeatGlow || sources.Count == 0 || Event.current.type != EventType.Repaint) return;
             var tc = TargetingCamera.Instance;
-            var cam = tc != null ? tc.NearCamera : null;
+            var cam = tc != null ? tc.NearCamera() : null;
             if (cam == null) return;
             Vector3 camPos = cam.transform.position;
             float tanHalf = Mathf.Tan(cam.fieldOfView * 0.5f * Mathf.Deg2Rad);

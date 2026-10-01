@@ -7,11 +7,12 @@ namespace BDArmory.Avionics
 {
     /// <summary>
     /// Settings for the avionics windows (3D radar, target list, GPS manager, FLIR, TGP HUD).
-    /// Stored separately from BDArmory's own settings in GameData/BDArmory/PluginData/Avionics.cfg.
+    /// Stored in GameData/BDArmoryAvionics/PluginData/Avionics.cfg.
     /// </summary>
     public static class AvionicsSettings
     {
-        static string SettingsPath => Path.Combine(KSPUtil.ApplicationRootPath, "GameData/BDArmory/PluginData/Avionics.cfg");
+        static string SettingsPath => Path.Combine(KSPUtil.ApplicationRootPath, "GameData/BDArmoryAvionics/PluginData/Avionics.cfg");
+        static string OldSettingsPath => Path.Combine(KSPUtil.ApplicationRootPath, "GameData/BDArmory/PluginData/Avionics.cfg"); // before the mod had its own folder
 
         // Windows
         public static bool ShowRadar3D = false;
@@ -70,6 +71,15 @@ namespace BDArmory.Avionics
         {
             if (loaded) return;
             loaded = true;
+            try
+            {
+                if (!File.Exists(SettingsPath) && File.Exists(OldSettingsPath))
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath));
+                    File.Move(OldSettingsPath, SettingsPath);
+                }
+            }
+            catch (Exception e) { Debug.LogWarning($"[BDArmory.Avionics]: Couldn't move the old settings file: {e.Message}"); }
             if (!File.Exists(SettingsPath)) return;
             try
             {

@@ -36,10 +36,30 @@ namespace BDArmory.Avionics
         public static MapSource MapSource = MapSource.KerbNet;
         public static bool MapRequiresCoverage = true;
 
-        // Windows and keys (the windows themselves are built once a layout is chosen)
-        public static KeyCode KeyC2Window = KeyCode.C;    // with RightAlt
-        public static KeyCode KeyIADSWindow = KeyCode.I;  // with RightAlt
-        public static KeyCode KeyLinkWindow = KeyCode.L;  // with RightAlt
+        // Windows
+        public static bool ShowConsole = false;
+        public static bool ShowMapOverlay = true;      // C2 symbols in KSP's map view
+        public static bool ShowIADS = false;
+        public static bool ShowLink = false;
+        public static bool ShowSettings = false;
+        public static Rect ConsoleRect = new(60, 80, 1120, 680);
+        public static Rect IADSRect = new(120, 120, 900, 520);
+        public static Rect LinkRect = new(160, 140, 640, 420);
+        public static Rect SettingsRect = new(200, 120, 420, 560);
+        public static Rect DrawerRect = new(-1, 80, 300, 560); // map overlay drawer; x < 0 = docked right
+
+        // Console map
+        public static C2MapLayer MapLayer = C2MapLayer.Terrain;
+        public static int MapZoomIndex = 3;
+        public static readonly float[] MapSpansKm = [10, 20, 40, 80, 160, 320, 640, 1280];
+        public static bool MapRings = true;
+        public static bool MapTracks = true;
+        public static bool OverlayTracks = true, OverlayLinks = true, OverlayRings = false, OverlayLabels = true;
+
+        // Keys (pressed together with RightAlt)
+        public static KeyCode KeyC2Window = KeyCode.C;
+        public static KeyCode KeyIADSWindow = KeyCode.I;
+        public static KeyCode KeyLinkWindow = KeyCode.L;
 
         public static void Load(ConfigNode n)
         {
@@ -64,6 +84,23 @@ namespace BDArmory.Avionics
             KeyC2Window = GetEnum(n, nameof(KeyC2Window), KeyC2Window);
             KeyIADSWindow = GetEnum(n, nameof(KeyIADSWindow), KeyIADSWindow);
             KeyLinkWindow = GetEnum(n, nameof(KeyLinkWindow), KeyLinkWindow);
+            ShowConsole = Get(n, nameof(ShowConsole), ShowConsole);
+            ShowMapOverlay = Get(n, nameof(ShowMapOverlay), ShowMapOverlay);
+            ShowIADS = Get(n, nameof(ShowIADS), ShowIADS);
+            ShowLink = Get(n, nameof(ShowLink), ShowLink);
+            ConsoleRect = GetRect(n, nameof(ConsoleRect), ConsoleRect);
+            IADSRect = GetRect(n, nameof(IADSRect), IADSRect);
+            LinkRect = GetRect(n, nameof(LinkRect), LinkRect);
+            SettingsRect = GetRect(n, nameof(SettingsRect), SettingsRect);
+            DrawerRect = GetRect(n, nameof(DrawerRect), DrawerRect);
+            MapLayer = GetEnum(n, nameof(MapLayer), MapLayer);
+            MapZoomIndex = Mathf.Clamp((int)Get(n, nameof(MapZoomIndex), (float)MapZoomIndex), 0, MapSpansKm.Length - 1);
+            MapRings = Get(n, nameof(MapRings), MapRings);
+            MapTracks = Get(n, nameof(MapTracks), MapTracks);
+            OverlayTracks = Get(n, nameof(OverlayTracks), OverlayTracks);
+            OverlayLinks = Get(n, nameof(OverlayLinks), OverlayLinks);
+            OverlayRings = Get(n, nameof(OverlayRings), OverlayRings);
+            OverlayLabels = Get(n, nameof(OverlayLabels), OverlayLabels);
         }
 
         public static void Save(ConfigNode n)
@@ -88,6 +125,34 @@ namespace BDArmory.Avionics
             n.AddValue(nameof(KeyC2Window), KeyC2Window.ToString());
             n.AddValue(nameof(KeyIADSWindow), KeyIADSWindow.ToString());
             n.AddValue(nameof(KeyLinkWindow), KeyLinkWindow.ToString());
+            n.AddValue(nameof(ShowConsole), ShowConsole);
+            n.AddValue(nameof(ShowMapOverlay), ShowMapOverlay);
+            n.AddValue(nameof(ShowIADS), ShowIADS);
+            n.AddValue(nameof(ShowLink), ShowLink);
+            n.AddValue(nameof(ConsoleRect), RectString(ConsoleRect));
+            n.AddValue(nameof(IADSRect), RectString(IADSRect));
+            n.AddValue(nameof(LinkRect), RectString(LinkRect));
+            n.AddValue(nameof(SettingsRect), RectString(SettingsRect));
+            n.AddValue(nameof(DrawerRect), RectString(DrawerRect));
+            n.AddValue(nameof(MapLayer), MapLayer.ToString());
+            n.AddValue(nameof(MapZoomIndex), MapZoomIndex);
+            n.AddValue(nameof(MapRings), MapRings);
+            n.AddValue(nameof(MapTracks), MapTracks);
+            n.AddValue(nameof(OverlayTracks), OverlayTracks);
+            n.AddValue(nameof(OverlayLinks), OverlayLinks);
+            n.AddValue(nameof(OverlayRings), OverlayRings);
+            n.AddValue(nameof(OverlayLabels), OverlayLabels);
+        }
+
+        static string RectString(Rect r) => System.FormattableString.Invariant($"{r.x:F0};{r.y:F0};{r.width:F0};{r.height:F0}");
+        static Rect GetRect(ConfigNode n, string k, Rect d)
+        {
+            if (!n.HasValue(k)) return d;
+            var p = n.GetValue(k).Split(';');
+            var ci = System.Globalization.CultureInfo.InvariantCulture;
+            var f = System.Globalization.NumberStyles.Float;
+            return p.Length == 4 && float.TryParse(p[0], f, ci, out var x) && float.TryParse(p[1], f, ci, out var y)
+                && float.TryParse(p[2], f, ci, out var w) && float.TryParse(p[3], f, ci, out var h) ? new Rect(x, y, w, h) : d;
         }
 
         public static string EmconName(EmconLevel e) => e switch

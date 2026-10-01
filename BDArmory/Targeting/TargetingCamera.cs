@@ -35,7 +35,6 @@ namespace BDArmory.Targeting
         }
 
         Camera[] cameras;
-        public Camera NearCamera => cameras != null ? cameras[0] : null; // Used by the avionics FLIR heat glows.
         public static Transform cameraTransform;
         public bool[] CamEnabled = [true, true, true, true];
 
@@ -151,8 +150,7 @@ namespace BDArmory.Targeting
             if (cameras[2] != null && CamEnabled[2]) cameras[2].Render(); // Sky cam
 
             Color origAmbientColor = RenderSettings.ambientLight;
-            bool nightLighting = nvMode || Avionics.FLIRModes.Active; // FLIR sees at night too
-            if (nightLighting)
+            if (nvMode)
             {
                 RenderSettings.ambientLight = new Color(0.5f, 0.5f, 0.5f, 1);
                 nvLight.enabled = true;
@@ -161,11 +159,10 @@ namespace BDArmory.Targeting
             if (cameras[0] != null && CamEnabled[0]) cameras[0].Render(); // Near cam
 
             nvLight.enabled = false;
-            if (nightLighting)
+            if (nvMode)
             {
                 RenderSettings.ambientLight = origAmbientColor;
             }
-            Avionics.FLIRModes.PostProcess(targetCamRenderTexture);
         }
 
         void LateUpdate()

@@ -76,3 +76,8 @@ Icon
 # Files that might appear on external disk
 .Spotlight-V100
 .Trashes
+
+# BDArmoryAvionics build output
+BDArmoryAvionics/GameData/BDArmoryAvionics/Plugins/
+BDArmoryAvionics/bin/
+BDArmoryAvionics/obj/
