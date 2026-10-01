@@ -220,6 +220,12 @@ namespace BDArmory.Avionics
                 eva.StartNonCollidePeriod(5f, 1f, fromPart, fromPart.airlock);
                 EnsureParachute(eva);
 
+                // KSP puts a kerbal leaving a hatch onto the nearest ladder/rail, where forces barely move it.
+                // Let the EVA controller start up, then make it let go before the seat fires.
+                yield return new WaitForFixedUpdate();
+                if (eva == null || eva.vessel == null) yield break;
+                LetGo(eva);
+
                 // Place the kerbal clear of the canopy, moving with the craft, then fire the seat rocket.
                 eva.vessel.SetPosition(startPos);
                 eva.vessel.SetVelocity(craftVelocity + dir * InitialKick);
@@ -241,6 +247,7 @@ namespace BDArmory.Avionics
             seat.LeaveSeat(new KSPActionParam(KSPActionGroup.Abort, KSPActionType.Activate));
             yield return new WaitForFixedUpdate();
             if (eva == null || eva.vessel == null) yield break;
+            LetGo(eva);
             EnsureParachute(eva);
             eva.vessel.SetVelocity((Vector3)eva.vessel.Velocity() + dir * InitialKick);
             yield return StartCoroutine(RocketBurn(eva, dir));
@@ -278,11 +285,44 @@ namespace BDArmory.Avionics
             var wait = new WaitForFixedUpdate();
             while (t < RocketBurnTime && eva != null && eva.part != null && eva.part.Rigidbody != null)
             {
+                LetGo(eva); // the kerbal passes ladders and rails on the way out; don't let it grab one
                 eva.part.Rigidbody.AddForce(dir * RocketAccel, ForceMode.Acceleration);
                 t += Time.fixedDeltaTime;
                 yield return wait;
             }
             StopRocketFX(fx);
+            // Keep it from grabbing anything while it coasts clear of the craft.
+            for (float c = 0; c < NoGrabAfterBurn && eva != null && eva.vessel != null; c += Time.fixedDeltaTime)
+            {
+                LetGo(eva);
+                yield return wait;
+            }
+        }
+
+        const float NoGrabAfterBurn = 1.5f; // seconds
+
+        static readonly System.Reflection.FieldInfo onLadderField = HarmonyLib.AccessTools.Field(typeof(KerbalEVA), "onLadder"); // private in KSP
+
+        static bool OnLadder(KerbalEVA eva)
+        {
+            if (onLadderField != null && onLadderField.GetValue(eva) is bool b && b) return true;
+            var state = eva.fsm != null ? eva.fsm.CurrentState : null;
+            return state != null && state.name != null && state.name.StartsWith("Ladder");
+        }
+
+        /// <summary>Release any ladder or rail the kerbal is holding (let go, or push off if letting go isn't allowed from that state).</summary>
+        static void LetGo(KerbalEVA eva)
+        {
+            if (eva == null || eva.fsm == null || !OnLadder(eva)) return;
+            try
+            {
+                eva.fsm.RunEvent(eva.On_ladderLetGo);
+                if (OnLadder(eva)) eva.fsm.RunEvent(eva.On_LadderPushOff);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[BDArmory.EjectionSystem]: Couldn't release the ladder: {e.Message}");
+            }
         }
 
         static GameObject StartRocketFX(KerbalEVA eva, Vector3 dir)
