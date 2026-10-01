@@ -91,14 +91,16 @@ namespace BDArmory.Avionics
         static void Status(BDModulePilotAI ai, string text) => setStatus.Invoke(ai, new object[] { text });
 
         /// <summary>The same per-frame setup BDArmory's AutoPilot does before steering.</summary>
-        static void Prepare(BDModulePilotAI ai)
+        static void Prepare(BDModulePilotAI ai, bool lowFlying)
         {
             upDirection(ai) = ai.vessel.up;
             finalMaxSteer(ai) = 1f;
             userSteerLimit(ai) = (float)getUserSteerLimit.Invoke(ai, null);
             steerMode.SetValue(ai, Enum.ToObject(steerMode.FieldType, 0)); // NormalFlight
             useVelRollTarget(ai) = false;
-            belowMinAltitude(ai) = ai.vessel.radarAltitude < ai.minAltitude;
+            // Below min altitude BDArmory forces the wings level, which stops a landing aircraft banking back onto the centreline.
+            // Landing: only treat it as "low" in the last 30 m.
+            belowMinAltitude(ai) = ai.vessel.radarAltitude < (lowFlying ? 30f : ai.minAltitude);
             updateVelDirs.Invoke(ai, null);
             ai.vessel.ActionGroups.SetGroup(KSPActionGroup.SAS, true);
         }
@@ -170,9 +172,10 @@ namespace BDArmory.Avionics
             if (drogue == null) { Msg($"{tanker.GetName()} has no AARS drogue"); return false; }
             DeployTanker(tanker);
             Invoke(probe, "Activate");
+            TargetDrogue(v, probe, drogue, tanker);
             Ops[ai] = new Op { kind = AirOpKind.Refuel, tanker = tanker, drogue = drogue, probe = probe, phase = "join", phaseStart = Time.time };
             ai.ActivatePilot();
-            Log(v, $"refuelling from {tanker.GetName()}");
+            Log(v, $"refuelling from {tanker.GetName()}: probe tip '{ProbeTransform(probe).name}' on {probe.part.partInfo.title}, basket '{DrogueTransform(drogue).name}' on {drogue.part.partInfo.title}");
             return true;
         }
 
@@ -203,7 +206,7 @@ namespace BDArmory.Avionics
         {
             if (!Ops.TryGetValue(ai, out var op)) return false;
             if (ai.vessel == null || !ai.vessel.loaded) { Ops.Remove(ai); return false; }
-            Prepare(ai);
+            Prepare(ai, lowFlying: op.kind == AirOpKind.Landing);
             bool keep = op.kind switch
             {
                 AirOpKind.Landing => Landing(ai, s, op),
@@ -260,9 +263,12 @@ namespace BDArmory.Avionics
                 case "final":
                     {
                         Status(ai, $"Landing: final {-along / 1000f:F1} km");
-                        // Aim at the glide path 1 km ahead on the centreline.
-                        float aheadAlong = Mathf.Min(along + 1000f, 0f);
-                        Vector3 aim = td + d * aheadAlong + up * (Mathf.Max(0, -aheadAlong) * tanG + 2f);
+                        // Aim at the glide path ahead on the centreline (closer in = tighter tracking), leading out sideways drift.
+                        float lookAhead = Mathf.Clamp(-along * 0.25f, 400f, 1000f);
+                        float aheadAlong = Mathf.Min(along + lookAhead, 0f);
+                        float lateralRate = Vector3.Dot((Vector3)v.srf_velocity, right);
+                        Vector3 aim = td + d * aheadAlong + up * (Mathf.Max(0, -aheadAlong) * tanG + 2f)
+                                      - right * Mathf.Clamp(lateralRate * 6f, -150f, 150f);
                         Fly(ai, s, aim, corrections: false);
                         Throttle(ai, approachSpeed, true, false);
                         if (along > -4500f) v.ActionGroups.SetGroup(KSPActionGroup.Gear, true);
@@ -394,9 +400,10 @@ namespace BDArmory.Avionics
         {
             var v = ai.vessel;
             if (op.tanker == null || !op.tanker.loaded || op.drogue == null || op.probe == null) { Msg($"{v.GetName()}: refuelling aborted (tanker lost)"); return false; }
-            var drogueT = Field<Transform>(op.drogue, "TirggerTransform");
-            var probeT = Field<Transform>(op.probe, "TriggerTransform");
-            if (drogueT == null || probeT == null) { Msg("AARS drogue/probe not ready"); return false; }
+            TargetDrogue(v, op.probe, op.drogue, op.tanker); // keep the probe pointed at our drogue (AARS needs the tanker targeted)
+            var drogueT = DrogueTransform(op.drogue);
+            var probeT = ProbeTransform(op.probe);
+            if (drogueT == null || probeT == null) { Msg($"AARS {(drogueT == null ? "drogue" : "probe")} transform not found"); return false; }
 
             Vector3 tVel = op.tanker.Velocity();
             float tSpeed = tVel.magnitude;
@@ -479,7 +486,8 @@ namespace BDArmory.Avionics
             var v = ai.vessel;
             Vector3 up = v.up;
             Vector3 h = Vector3.ProjectOnPlane(op.tankerHeading, up).normalized;
-            float climb = Mathf.Clamp((float)(op.tankerAlt - v.altitude) * 0.1f, -30f, 30f);
+            // Altitude hold: height error minus a vertical-speed damping term, as a target ~2 km ahead (up to ±4°).
+            float climb = Mathf.Clamp((float)(op.tankerAlt - v.altitude) * 0.5f - (float)v.verticalSpeed * 4f, -150f, 150f);
             Fly(ai, s, (Vector3)v.CoM + h * 2000f + up * climb, corrections: true);
             Throttle(ai, op.tankerSpeed, true, false);
             Status(ai, $"Tanker {op.tankerSpeed:F0} m/s, {op.tankerAlt / 1000:F1} km");
@@ -499,6 +507,52 @@ namespace BDArmory.Avionics
                     bool deployed = Field<bool>(m, "IsDeployed");
                     if (!deployed) Invoke(m, "Activate");
                 }
+        }
+
+        /// <summary>The basket: AARS's trigger if it has set it, else the "Trigger" / "Drogue" model transforms, else the pod's moving drogue.</summary>
+        static Transform DrogueTransform(PartModule drogue)
+        {
+            var t = Field<Transform>(drogue, "TirggerTransform");
+            if (t == null) t = drogue.part.FindModelTransform("Trigger");
+            if (t == null) t = drogue.part.FindModelTransform("Drogue");
+            if (t == null) { var pod = drogue.part.Modules.GetModule("DroguePod"); if (pod != null) t = Field<Transform>(pod, "DrogueTransform"); }
+            return t != null ? t : drogue.part.transform;
+        }
+
+        /// <summary>The probe tip: AARS's trigger, else the "Trigger" / "ProbeTransform" model transforms, else the part.</summary>
+        static Transform ProbeTransform(PartModule probe)
+        {
+            var t = Field<Transform>(probe, "TriggerTransform");
+            if (t == null) t = probe.part.FindModelTransform("Trigger");
+            if (t == null) t = Field<Transform>(probe, "ProbeTransform");
+            if (t == null) t = probe.part.FindModelTransform("ProbeTransform");
+            return t != null ? t : probe.part.transform;
+        }
+
+        /// <summary>What targeting the tanker by hand does: the receiver targets the tanker, and the probe is told which drogue it's going for.</summary>
+        static void TargetDrogue(Vessel receiver, PartModule probe, PartModule drogue, Vessel tanker)
+        {
+            try
+            {
+                if (receiver == FlightGlobals.ActiveVessel)
+                {
+                    if (!ReferenceEquals(FlightGlobals.fetch.VesselTarget, tanker)) FlightGlobals.fetch.SetVesselTarget(tanker);
+                }
+                else AccessTools.Property(typeof(Vessel), "targetObject")?.SetValue(receiver, tanker);
+                SetField(probe, "target", tanker);
+                SetField(probe, "targetvessel", tanker);
+                SetField(probe, "TDrogue", drogue.part);
+                SetField(probe, "Drogue", drogue);
+                SetField(probe, "IsTarget", true);
+                SetField(drogue, "IsTarget", true);
+            }
+            catch (Exception e) { Debug.LogWarning($"[BDArmoryAvionics]: AARS targeting failed: {e.Message}"); }
+        }
+
+        static void SetField(object o, string name, object value)
+        {
+            var f = AccessTools.Field(o.GetType(), name);
+            if (f != null && (value == null || f.FieldType.IsInstanceOfType(value))) f.SetValue(o, value);
         }
 
         static PartModule FindModule(Vessel v, string name)

@@ -37,6 +37,7 @@ namespace BDArmory.Avionics
             public int flares, chaff;
             public readonly List<ModuleCMProgram> cmPrograms = new();
             public readonly List<BDModularGuidance> modular = new();
+            public BDModulePilotAI pilot;
         }
 
         void Start()
@@ -80,6 +81,7 @@ namespace BDArmory.Avionics
                     {
                         case ModuleC4ISRTerminal t: fit.terminals++; fit.terms.Add(t); break;
                         case ModuleCMProgram cp: fit.cmPrograms.Add(cp); break;
+                        case BDModulePilotAI pa: if (fit.pilot == null) fit.pilot = pa; break;
                         case CMDropper cm: if (cm.cmType == CMDropper.CountermeasureTypes.Flare) fit.flares++; else if (cm.cmType == CMDropper.CountermeasureTypes.Chaff) fit.chaff++; break;
                         case MissileFire: fit.wms++; break;
                         case BDModularGuidance mmg: fit.modular.Add(mmg); fit.missiles++; fit.missileRange = Mathf.Max(fit.missileRange, mmg.GetEngageRange()); break;
@@ -179,6 +181,27 @@ namespace BDArmory.Avionics
                     if (GUI.Button(new Rect(i * (ew + 4), y, ew, 20), mode, t0.emcon == mode ? sel : btn)) foreach (var t in fit.terms) t.emcon = mode;
                 }
                 y += 26;
+            }
+
+            if (fit.pilot != null)
+            {
+                var ai = fit.pilot;
+                Head(ref y, w, "AI FLIGHT ENVELOPE");
+                Line(ref y, w, $"Unclamp tuning: {(ai.UpToEleven ? "ON (limits up to 10 km/s, 400 km)" : "off (stock limits)")}");
+                Line(ref y, w, $"Altitude: default {ai.defaultAltitude:F0} m, min {ai.minAltitude:F0}, max {ai.maxAltitude:F0}");
+                Line(ref y, w, $"Speed: idle {ai.idleSpeed:F0}, corner {ai.cornerSpeed:F0}, max {ai.maxSpeed:F0} m/s");
+                Line(ref y, w, $"Max G {ai.maxAllowedGForce:F0} · takeoff speed {ai.takeOffSpeed:F0} m/s");
+                float pw = (w - 4) / 2;
+                for (int i = 0; i < AIEnvelope.Presets.Length; i++)
+                {
+                    var p = AIEnvelope.Presets[i];
+                    if (GUI.Button(new Rect((i % 2) * (pw + 4), y + (i / 2) * 22, pw, 20), p.name, btn)) StartCoroutine(AIEnvelope.Apply(ai, p));
+                }
+                y += ((AIEnvelope.Presets.Length + 1) / 2) * 22 + 2;
+                if (GUI.Button(new Rect(0, y, w, 20), ai.UpToEleven ? "Unclamp tuning: ON" : "Unclamp tuning: off", ai.UpToEleven ? sel : btn)) ai.UpToEleven = !ai.UpToEleven;
+                y += 22;
+                AvionicsDraw.ColorLabel(new Rect(0, y, w, 28), "Fine-tune in the Pilot AI part menu (all settings shown,\nincluding Unclamp tuning).", AvionicsDraw.LabelSmall, AvionicsDraw.ScopeText);
+                y += 30;
             }
 
             if (fit.cmPrograms.Count > 0)

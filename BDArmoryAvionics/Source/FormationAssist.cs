@@ -38,6 +38,13 @@ namespace BDArmory.Avionics
 
         static bool InFormation(BDModulePilotAI ai, out Vector3 slot, out float dist) => InFormation(ai, out slot, out dist, out _);
 
+        /// <summary>The formation leader, if this AI is following one and is within assist range of its slot (Follow command only).</summary>
+        public static Vessel LeaderInRange(BDModulePilotAI ai)
+        {
+            if (!AvionicsSettings.FormationAssist || ai == null || ai.currentCommand != PilotCommands.Follow) return null;
+            return InFormation(ai, out _, out _, out Vessel leader) ? leader : null;
+        }
+
         static bool InFormation(BDModulePilotAI ai, out Vector3 slot, out float dist, out Vessel leader)
         {
             slot = default; dist = float.MaxValue; leader = null;
@@ -120,6 +127,49 @@ namespace BDArmory.Avionics
         }
 
         static readonly Dictionary<BDModulePilotAI, float> nextLog = new();
+    }
+
+    /// <summary>
+    /// Wingmen: while holding a slot, lower the minimum altitude to just under the leader's, so the "gain altitude" mode
+    /// doesn't keep yanking them out of formation (climb above min alt, drop back to the slot, repeat = bobbing).
+    /// Restored right after the AI update.
+    /// </summary>
+    [HarmonyPatch(typeof(BDModulePilotAI), "AutoPilot")]
+    static class Patch_PilotAI_AutoPilot_FormationMinAlt
+    {
+        static void Prefix(BDModulePilotAI __instance, out float __state)
+        {
+            __state = -1f;
+            var leader = FormationAssist.LeaderInRange(__instance);
+            if (leader == null) return;
+            float floor = Mathf.Clamp((float)leader.radarAltitude - 150f, 50f, __instance.minAltitude);
+            if (floor >= __instance.minAltitude) return;
+            __state = __instance.minAltitude;
+            __instance.minAltitude = floor;
+        }
+
+        static void Finalizer(BDModulePilotAI __instance, float __state)
+        {
+            if (__state >= 0f) __instance.minAltitude = __state;
+        }
+    }
+
+    /// <summary>Wingmen don't treat their own leader (or a refuelling receiver its tanker) as a collision threat unless genuinely touching.</summary>
+    [HarmonyPatch(typeof(BDModulePilotAI), "PredictCollisionWithVessel")]
+    static class Patch_PilotAI_PredictCollision
+    {
+        static bool Prefix(BDModulePilotAI __instance, Vessel v, ref Vector3 badDirection, ref bool __result)
+        {
+            if (v == null || __instance.vessel == null) return true;
+            bool leader = AvionicsSettings.FormationAssist && __instance.currentCommand == PilotCommands.Follow && __instance.commandLeader != null && __instance.commandLeader.vessel == v;
+            var op = AirOps.OpFor(__instance.vessel);
+            bool tanker = op != null && op.kind == AirOpKind.Refuel && op.tanker == v;
+            if (!leader && !tanker) return true;
+            if (leader && (v.CoM - __instance.vessel.CoM).sqrMagnitude < 15f * 15f) return true; // actually about to touch: let it dodge
+            __result = false;
+            badDirection = default;
+            return false;
+        }
     }
 
     [HarmonyPatch(typeof(BDModulePilotAI), "UpdateFollowCommand")]
