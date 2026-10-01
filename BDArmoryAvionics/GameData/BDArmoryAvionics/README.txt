@@ -22,6 +22,22 @@ or the senior member) lifts every member one level (not Command) while flying a 
 Medals: Ace / Double / Triple Ace (5/10/15 air kills), Ace in a Day (5 in one battle), Strike Medal (5 surface kills),
 Gunfighter (5 gun kills), Missileer (10 missile kills), Survivor (shot down and lived), Veteran (10 battles), Master Operator.
 
+Stealth shaping and electronic warfare
+--------------------------------------
+Stock BDArmory shades each surface by cos(2 x angle to the radar), so facets tilted 30° still return half: shaping
+barely matters. The stealth model (menu > Electronic warfare, or the VAB/SPH C4ISR window) makes returns specular:
+  Stock / Low (default) / Medium / High. Angled facets return far less, flat panels square to the radar more
+  (spikes), a sphere is unchanged (BDArmory's 1 m² calibration holds), RAM / reflectivity still applies.
+  BDArmory's own RCS window in the editor shows the shaped value. Note: parts with smoothed normals look curved
+  to the renderer, so their facets count as curved surfaces.
+EW (Electronic warfare window):
+  Link jamming   enemy jammers cut or degrade data links (strength / distance², line of sight); Sensors/EW skill
+                 strengthens jamming and resists it. Jammed units drop off the network (terminal shows JAMMED).
+  ESM            units with an RWR switched on locate enemy radars and jammers passively and share them as tracks
+                 (ESM / ESM-JAM): rough range from one sensor, exact from two or more.
+  Jammer modes   per craft (terminal part menu, editor window, EW window): Auto (BDArmory guard mode),
+                 Barrage (always jamming, e.g. an EW escort), Silent (never jams).
+
 Kill log and after-action report
 --------------------------------
 Every BDArmory hit (guns, rockets, missiles, nukes, fire, rams) is credited to the craft that caused it. A craft is

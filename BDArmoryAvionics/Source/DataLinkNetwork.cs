@@ -35,6 +35,9 @@ namespace BDArmory.Avionics
         public bool hasRadar;
         public bool radarOn;
         public float radarRange;       // metres, longest detection range of any radar
+        public float jam;              // jamming received (J/S, 0 = clear)
+        public bool jammed;            // link cut by enemy jamming
+        public bool hasRWR;            // can locate emitters passively (ESM)
 
         public string Name => vessel != null ? vessel.GetName() : "(lost)";
         public bool IsShooter => role == NodeRole.SAM && readyMissiles > 0 && (terminal == null || terminal.iadsMember);
@@ -55,13 +58,14 @@ namespace BDArmory.Avionics
         public float lastSeen;
         public bool isMissile;
         public bool hostile;
-        public bool byRadar, byIRST, byTeamDB;
+        public bool byRadar, byIRST, byTeamDB, byESM;
+        public bool emitterJammer;     // located by its jamming
         public readonly List<NetNode> reporters = new();
         public NetNode bestRadarReporter;  // closest node holding it on radar (used for launch-on-remote)
 
         public string Label => $"T{id:00}";
         public string Name => vessel != null ? vessel.GetName() : Label;
-        public string SourceString => (byRadar ? "RDR " : "") + (byIRST ? "IRST " : "") + (byTeamDB ? "TEAM" : "");
+        public string SourceString => (byRadar ? "RDR " : "") + (byIRST ? "IRST " : "") + (byESM ? (emitterJammer ? "ESM-JAM " : "ESM ") : "") + (byTeamDB ? "TEAM" : "");
     }
 
     /// <summary>A team's data link network: its nodes, which of them are connected, and the fused track picture.</summary>
@@ -162,15 +166,17 @@ namespace BDArmory.Avionics
             var stale = new List<Vessel>();
             foreach (var v in nodeCache.Keys) if (v == null || !seen.Contains(v)) stale.Add(v);
             foreach (var v in stale) nodeCache.Remove(v);
+            ElectronicWarfare.Survey();
 
             foreach (var net in Networks.Values)
             {
                 Connect(net);
                 foreach (var n in net.nodes) if (!n.LinkEnabled) SetLink(n, false, LinkPath.None, 0, 0, 0); // switched off on the terminal
+                ElectronicWarfare.ApplyLinkJamming(net);
                 FuseTracks(net);
                 foreach (var n in net.nodes)
                     if (n.terminal != null)
-                        n.terminal.status = !n.LinkEnabled ? "Off" : !n.connected ? "No link" : $"{n.role}, {n.path}, {n.trackCount} trk";
+                        n.terminal.status = !n.LinkEnabled ? "Off" : n.jammed ? "JAMMED" : !n.connected ? "No link" : $"{n.role}, {n.path}, {n.trackCount} trk{(n.jam > 0.05f ? $", jam {n.jam:F1}" : "")}";
             }
         }
 
@@ -196,6 +202,8 @@ namespace BDArmory.Avionics
                 n.radarOn |= r.radarEnabled;
                 n.radarRange = Mathf.Max(n.radarRange, r.radarMaxDistanceDetect * 1000f);
             }
+            n.hasRWR = false;
+            foreach (var w in VesselModuleRegistry.GetModules<RadarWarningReceiver>(v)) if (w != null && w.rwrEnabled) { n.hasRWR = true; break; }
 
             bool onSurface = v.LandedOrSplashed;
             if (onSurface)
@@ -303,7 +311,7 @@ namespace BDArmory.Avionics
             }
         }
 
-        static void SetLink(NetNode n, bool connected, LinkPath path, int hops, float quality, double delay)
+        internal static void SetLink(NetNode n, bool connected, LinkPath path, int hops, float quality, double delay)
         {
             n.connected = connected;
             n.path = path;
@@ -337,10 +345,13 @@ namespace BDArmory.Avionics
             foreach (var t in net.tracks.Values)
             {
                 t.reporters.Clear();
-                t.byRadar = t.byIRST = t.byTeamDB = false;
+                t.byRadar = t.byIRST = t.byTeamDB = t.byESM = t.emitterJammer = false;
                 t.bestRadarReporter = null;
             }
             foreach (var n in net.nodes) n.trackCount = 0;
+
+            // Passive emitter tracks first, so any radar or IRST report of the same craft overrides the rougher ESM position.
+            ElectronicWarfare.ReportEmitters(net, now);
 
             foreach (var n in net.nodes)
             {
@@ -390,7 +401,7 @@ namespace BDArmory.Avionics
 
         static float Dist(NetNode n, NetTrack t) => n.vessel != null ? (n.vessel.CoM - t.position).sqrMagnitude : float.MaxValue;
 
-        static NetTrack Report(TeamNetwork net, Vessel v, Vector3 pos, Vector3 vel, TargetInfo ti, NetNode reporter, float now)
+        internal static NetTrack Report(TeamNetwork net, Vessel v, Vector3 pos, Vector3 vel, TargetInfo ti, NetNode reporter, float now)
         {
             if (v == null) return null;
             if (net.Node(v) != null) return null; // our own team's linked units are nodes, not tracks

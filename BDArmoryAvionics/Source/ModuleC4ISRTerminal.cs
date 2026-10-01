@@ -11,6 +11,7 @@ namespace BDArmory.Avionics
     {
         public static readonly string[] Roles = ["Auto", "Fighter", "AEW", "SAM", "EWR", "HQ", "Ground", "Ship"];
         public static readonly string[] EmconModes = ["Team", "Always on", "Silent"];
+        public static readonly string[] JammerModes = ["Auto", "Barrage", "Silent"];
 
         [KSPField(isPersistant = true, guiActive = true, guiActiveEditor = true, guiName = "C4ISR role", groupName = "c4isr", groupDisplayName = "C4ISR data link", groupStartCollapsed = true),
          UI_ChooseOption(options = ["Auto", "Fighter", "AEW", "SAM", "EWR", "HQ", "Ground", "Ship"], scene = UI_Scene.All)]
@@ -27,6 +28,11 @@ namespace BDArmory.Avionics
         [KSPField(isPersistant = true, guiActive = true, guiActiveEditor = true, guiName = "Radar EMCON", groupName = "c4isr"),
          UI_ChooseOption(options = ["Team", "Always on", "Silent"], scene = UI_Scene.All)]
         public string emcon = "Team";
+
+        // Auto: BDArmory guard mode switches jammers on when threatened. Barrage: jam continuously (EW aircraft). Silent: never jam.
+        [KSPField(isPersistant = true, guiActive = true, guiActiveEditor = true, guiName = "Jammers", groupName = "c4isr"),
+         UI_ChooseOption(options = ["Auto", "Barrage", "Silent"], scene = UI_Scene.All)]
+        public string jammer = "Auto";
 
         [KSPField(guiActive = true, guiActiveEditor = false, guiName = "Network", groupName = "c4isr")]
         public string status = "-";

@@ -62,6 +62,10 @@ namespace BDArmory.Avionics
         public static bool AltitudeFromSeaLevel = true; // AI altitude settings measured from sea level (true) or the ground below (stock)
         public static bool CombatOperators = true;      // crew skill affects guard mode / weapons / AI; Astronaut Complex training
         public static bool AARPopup = true;             // open the after-action report when an engagement ends
+        public static int StealthModel = 1;             // 0 stock RCS, 1 low, 2 medium, 3 high specular shaping
+        public static bool EWLinkJamming = true;        // enemy jammers degrade / cut data links
+        public static bool EWESM = true;                // RWR-equipped nodes share passive emitter tracks
+        public static bool ShowEW = false;
         public static bool WorldContactMarkers = false;
 
         // Target list
@@ -142,6 +146,10 @@ namespace BDArmory.Avionics
                 AltitudeFromSeaLevel = GetBool(node, "AltitudeFromSeaLevel", AltitudeFromSeaLevel);
                 CombatOperators = GetBool(node, "CombatOperators", CombatOperators);
                 AARPopup = GetBool(node, "AARPopup", AARPopup);
+                if (int.TryParse(node.GetValue("StealthModel"), out int sm)) StealthModel = Mathf.Clamp(sm, 0, 3);
+                EWLinkJamming = GetBool(node, "EWLinkJamming", EWLinkJamming);
+                EWESM = GetBool(node, "EWESM", EWESM);
+                ShowEW = GetBool(node, "ShowEW", ShowEW);
                 WorldContactMarkers = GetBool(node, "WorldContactMarkers", WorldContactMarkers);
 
                 TargetListShowFriendlies = GetBool(node, "TargetListShowFriendlies", TargetListShowFriendlies);
@@ -216,6 +224,10 @@ namespace BDArmory.Avionics
                 node.AddValue("AltitudeFromSeaLevel", AltitudeFromSeaLevel);
                 node.AddValue("CombatOperators", CombatOperators);
                 node.AddValue("AARPopup", AARPopup);
+                node.AddValue("StealthModel", StealthModel);
+                node.AddValue("EWLinkJamming", EWLinkJamming);
+                node.AddValue("EWESM", EWESM);
+                node.AddValue("ShowEW", ShowEW);
                 node.AddValue("WorldContactMarkers", WorldContactMarkers);
 
                 node.AddValue("TargetListShowFriendlies", TargetListShowFriendlies);

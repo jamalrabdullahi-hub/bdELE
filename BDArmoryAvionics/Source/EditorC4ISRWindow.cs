@@ -180,8 +180,23 @@ namespace BDArmory.Avionics
                     var mode = ModuleC4ISRTerminal.EmconModes[i];
                     if (GUI.Button(new Rect(i * (ew + 4), y, ew, 20), mode, t0.emcon == mode ? sel : btn)) foreach (var t in fit.terms) t.emcon = mode;
                 }
+                y += 24;
+                AvionicsDraw.ColorLabel(new Rect(0, y, w, 14), "Jammers (Barrage = EW aircraft, jams continuously)", AvionicsDraw.LabelSmall, AvionicsDraw.ScopeText); y += 16;
+                for (int i = 0; i < ModuleC4ISRTerminal.JammerModes.Length; i++)
+                {
+                    var mode = ModuleC4ISRTerminal.JammerModes[i];
+                    if (GUI.Button(new Rect(i * (ew + 4), y, ew, 20), mode, t0.jammer == mode ? sel : btn)) foreach (var t in fit.terms) t.jammer = mode;
+                }
                 y += 26;
             }
+
+            Head(ref y, w, "STEALTH (radar shaping model)");
+            float sw = (w - 12) / 4;
+            for (int i = 0; i < StealthRCS.ModeNames.Length; i++)
+                if (GUI.Button(new Rect(i * (sw + 4), y, sw, 20), StealthRCS.ModeNames[i], AvionicsSettings.StealthModel == i ? sel : btn)) StealthRCS.SetMode(i);
+            y += 22;
+            Line(ref y, w, StealthRCS.ModeHelp);
+            Line(ref y, w, "Re-run BDArmory's RCS window to see the new value.");
 
             if (fit.pilot != null)
             {
