@@ -221,12 +221,29 @@ namespace BDArmory.Avionics
                 EnsureParachute(eva);
 
                 // KSP puts a kerbal leaving a hatch onto the nearest ladder/rail, where forces barely move it.
-                // Let the EVA controller start up, then make it let go before the seat fires.
-                yield return new WaitForFixedUpdate();
+                // Step 1 (what pressing F does): let go. KSP ignores "let go" until the grab has finished,
+                // so keep asking until the kerbal is actually free, and only then fire the seat.
+                var wait = new WaitForFixedUpdate();
+                yield return wait;
                 if (eva == null || eva.vessel == null) yield break;
-                LetGo(eva);
+                string grabbed = StateName(eva);
+                float releaseStart = Time.time;
+                while (eva != null && eva.vessel != null && OnLadder(eva) && Time.time - releaseStart < MaxReleaseWait)
+                {
+                    LetGo(eva);
+                    yield return wait;
+                }
+                if (eva == null || eva.vessel == null) yield break;
+                Debug.Log($"[BDArmoryAvionics]: Eject {crew.name}: spawned in '{grabbed}', {(OnLadder(eva) ? "STILL HOLDING" : "free")} after {Time.time - releaseStart:F2} s, now '{StateName(eva)}'");
 
-                // Place the kerbal clear of the canopy, moving with the craft, then fire the seat rocket.
+                // Step 2: place the kerbal clear of the canopy, moving with the craft, then fire the seat rocket.
+                if (fromPart != null && fromPart.vessel != null)
+                {
+                    dir = EjectDirection(fromPart);
+                    craftVelocity = fromPart.vessel.Velocity();
+                    startPos = fromPart.transform.position + dir * EjectClearance(fromPart);
+                }
+                else startPos = eva.vessel.CoM + dir * 1.5f; // craft already gone (auto-eject on destruction)
                 eva.vessel.SetPosition(startPos);
                 eva.vessel.SetVelocity(craftVelocity + dir * InitialKick);
                 yield return StartCoroutine(RocketBurn(eva, dir));
@@ -300,8 +317,12 @@ namespace BDArmory.Avionics
         }
 
         const float NoGrabAfterBurn = 1.5f; // seconds
+        const float MaxReleaseWait = 1.5f;  // seconds to wait for the kerbal to let go before firing anyway
+
+        static string StateName(KerbalEVA eva) => eva != null && eva.fsm != null && eva.fsm.CurrentState != null ? eva.fsm.CurrentState.name : "?";
 
         static readonly System.Reflection.FieldInfo onLadderField = HarmonyLib.AccessTools.Field(typeof(KerbalEVA), "onLadder"); // private in KSP
+        static readonly System.Reflection.FieldInfo ladderTriggersField = HarmonyLib.AccessTools.Field(typeof(KerbalEVA), "currentLadderTriggers"); // private in KSP
 
         static bool OnLadder(KerbalEVA eva)
         {
@@ -313,9 +334,13 @@ namespace BDArmory.Avionics
         /// <summary>Release any ladder or rail the kerbal is holding (let go, or push off if letting go isn't allowed from that state).</summary>
         static void LetGo(KerbalEVA eva)
         {
-            if (eva == null || eva.fsm == null || !OnLadder(eva)) return;
+            if (eva == null || eva.fsm == null) return;
+            (ladderTriggersField?.GetValue(eva) as List<Collider>)?.Clear(); // forget nearby ladders so it can't grab (or re-grab) one
+            if (!OnLadder(eva)) return;
             try
             {
+                // A grab that's still in progress can't be let go of; finish it first, then let go (F), else push off (Space).
+                if (eva.fsm.CurrentState == eva.st_ladder_acquire) eva.fsm.RunEvent(eva.On_ladderGrabComplete);
                 eva.fsm.RunEvent(eva.On_ladderLetGo);
                 if (OnLadder(eva)) eva.fsm.RunEvent(eva.On_LadderPushOff);
             }
