@@ -40,6 +40,10 @@ namespace BDArmory.Avionics
          UI_Toggle(enabledText = "Yes", disabledText = "No", scene = UI_Scene.All)]
         public bool returnToRest = true;
 
+        [KSPField(isPersistant = true, guiActive = true, guiActiveEditor = false, guiName = "Show aim lines", groupName = "irturret"),
+         UI_Toggle(enabledText = "On", disabledText = "Off", scene = UI_Scene.Flight)]
+        public bool showAimLines = false;
+
         [KSPField(guiActive = true, guiActiveEditor = false, guiName = "Turret", groupName = "irturret")]
         public string status = "-";
 
@@ -157,6 +161,7 @@ namespace BDArmory.Avionics
         void Rebuild()
         {
             groups.Clear();
+            debug.Clear();
             foreach (var v in FlightGlobals.VesselsLoaded)
             {
                 if (v == null || v.packed) continue;
@@ -228,8 +233,46 @@ namespace BDArmory.Avionics
         /// <summary>Forward direction of the aim reference. Guns and launchers point along forward; plain parts along up.</summary>
         static Vector3 AimForward(Group g)
         {
+            // Missiles: their own launch transform. (BDArmory's GetForwardTransform returns the *vessel's* control direction
+            // for multi-launchers with overrideReferenceTransform, which doesn't turn with the servos.)
+            if (g.missile is MissileLauncher ml && ml.MissileReferenceTransform != null) return ml.MissileReferenceTransform.forward;
             if (g.missile != null && !g.missile.HasFired) return g.missile.GetForwardTransform();
             return g.alongForward ? g.aimTransform.forward : g.aimTransform.up;
+        }
+
+        // ---- Aim debug: lines in the flight view and a log line every few seconds ----
+
+        readonly Dictionary<Group, (Vector3 origin, Vector3 f, Vector3 aim, string what, float err)> debug = new();
+        float nextDebugLog;
+
+        static string AzEl(Vessel v, Vector3 dir)
+        {
+            Vector3 up = v.upAxis;
+            Vector3 north = Vector3.ProjectOnPlane(v.mainBody.transform.up, up).normalized;
+            float az = (Vector3.SignedAngle(north, Vector3.ProjectOnPlane(dir, up), up) + 360f) % 360f;
+            float el = 90f - Vector3.Angle(up, dir);
+            return $"az {az:F0}° el {el:F0}°";
+        }
+
+        void OnGUI()
+        {
+            if (!HighLogic.LoadedSceneIsFlight || MapView.MapIsEnabled || Event.current.type != EventType.Repaint || debug.Count == 0) return;
+            var cam = FlightCamera.fetch != null ? FlightCamera.fetch.mainCamera : null;
+            if (cam == null) return;
+            var old = GUI.matrix;
+            GUI.matrix = Matrix4x4.identity;
+            bool S(Vector3 w, out Vector2 p) { var s = cam.WorldToScreenPoint(w); p = new Vector2(s.x, Screen.height - s.y); return s.z > 0; }
+            if (AvionicsDraw.Begin())
+            {
+                foreach (var kv in debug)
+                {
+                    var (o, f, aim, _, _) = kv.Value;
+                    if (S(o, out var po) && S(o + f * 300f, out var pf)) AvionicsDraw.Line(po, pf, 2, Color.cyan);
+                    if (S(o, out po) && S(aim, out var pa)) AvionicsDraw.Line(po, pa, 2, Color.red);
+                }
+                AvionicsDraw.End();
+            }
+            GUI.matrix = old;
         }
 
         void Drive(Group g)
@@ -262,6 +305,21 @@ namespace BDArmory.Avionics
             Vector3 d = (aimPoint - origin).normalized;
             Vector3 f = AimForward(g);
             float err = Vector3.Angle(f, d);
+
+            if (settings.showAimLines)
+            {
+                debug[g] = (origin, f, aimPoint, what, err);
+                if (Time.time >= nextDebugLog)
+                {
+                    nextDebugLog = Time.time + 3f;
+                    string aimPart = g.aimTransform.GetComponentInParent<Part>()?.partInfo?.title ?? "?";
+                    string kind = g.weapon != null ? "gun barrel" : g.missile != null ? $"missile ({g.missile.GetType().Name})" : g.alongForward ? "camera" : "tip part up";
+                    Debug.Log($"[BDArmoryAvionics]: Turret G{g.id} on {g.vessel.GetName()}: aiming {kind} '{aimPart}' at {what}, " +
+                              $"barrel {AzEl(g.vessel, f)}, target {AzEl(g.vessel, d)} at {(aimPoint - origin).magnitude / 1000f:F1} km, err {err:F1}°; " +
+                              string.Join("; ", g.joints.ConvertAll(j => $"{j.module.part.partInfo.title} pos {IRServo.Position(j.servo):F1} [{IRServo.Min(j.servo):F0}..{IRServo.Max(j.servo):F0}] sign {j.sign}{(j.calibrated ? "" : "?")}")));
+                }
+            }
+            else debug.Remove(g);
 
             // Cyclic coordinate descent: each joint (base first) turns to line the barrel up with the target around its own axis.
             foreach (var j in g.joints)
