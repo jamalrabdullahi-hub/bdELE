@@ -21,7 +21,7 @@ namespace BDArmory.Avionics
 
         [KSPField(isPersistant = true, guiActive = true, guiActiveEditor = true, guiName = "CM program", groupName = "cmprog", groupDisplayName = "Countermeasure program", groupStartCollapsed = true),
          UI_ChooseOption(options = ["Off", "Manual", "Auto"], scene = UI_Scene.All)]
-        public string mode = "Auto";
+        public string mode = "Manual"; // Auto has to be chosen per craft: it makes targets very hard to hit with radar/IR missiles
 
         [KSPField(isPersistant = true, guiActive = true, guiActiveEditor = true, guiName = "Trigger time to impact", guiUnits = " s", groupName = "cmprog"),
          UI_FloatRange(minValue = 1f, maxValue = 15f, stepIncrement = 0.5f, scene = UI_Scene.All)]
@@ -130,6 +130,7 @@ namespace BDArmory.Avionics
             if (prog == null || !prog.Enabled) return;
             float duration = prog.salvos * (prog.bursts * prog.burstInterval + prog.salvoInterval);
             busyUntil[v] = Time.time + duration + 0.5f;
+            Debug.Log($"[BDArmoryAvionics]: CM program on {v.GetName()} ({prog.mode}): {(threatHeat == true ? "flares (IR missile)" : threatHeat == false ? "chaff (radar missile)" : "flares + chaff")}");
             instance.StartCoroutine(instance.Program(v, prog, threatHeat));
         }
 
