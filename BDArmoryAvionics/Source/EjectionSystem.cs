@@ -226,7 +226,8 @@ namespace BDArmory.Avionics
                 var wait = new WaitForFixedUpdate();
                 yield return wait;
                 if (eva == null || eva.vessel == null) yield break;
-                string grabbed = StateName(eva);                bool wasJointed = AnchorJoint(eva) != null || eva.IsLadderJointed;
+                string grabbed = StateName(eva);
+                bool wasJointed = AnchorJoint(eva) != null || eva.IsLadderJointed;
                 float releaseStart = Time.time;
                 while (eva != null && eva.vessel != null && OnLadder(eva) && Time.time - releaseStart < MaxReleaseWait)
                 {
