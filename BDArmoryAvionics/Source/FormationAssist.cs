@@ -142,7 +142,7 @@ namespace BDArmory.Avionics
             __state = -1f;
             var leader = FormationAssist.LeaderInRange(__instance);
             if (leader == null) return;
-            float floor = Mathf.Clamp((float)leader.radarAltitude - 150f, 50f, __instance.minAltitude);
+            float floor = Mathf.Clamp((float)AltitudeReference.Height(leader) - 150f, 50f, __instance.minAltitude);
             if (floor >= __instance.minAltitude) return;
             __state = __instance.minAltitude;
             __instance.minAltitude = floor;

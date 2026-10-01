@@ -59,6 +59,7 @@ namespace BDArmory.Avionics
         public static float MaxRotateAttitude = 10f;  // degrees: nose attitude cap while the wheels are on the ground
         public static bool AirOpsTelemetry = false;   // log formation / landing / refuelling state every 2 s for tuning
         public static bool ShowAllAITweakables = true; // show every pilot AI setting (incl. Unclamp tuning) without KSP's Advanced Tweakables
+        public static bool AltitudeFromSeaLevel = true; // AI altitude settings measured from sea level (true) or the ground below (stock)
         public static bool WorldContactMarkers = false;
 
         // Target list
@@ -136,6 +137,7 @@ namespace BDArmory.Avionics
                 MaxRotateAttitude = Mathf.Clamp(GetFloat(node, "MaxRotateAttitude", MaxRotateAttitude), 3f, 25f);
                 AirOpsTelemetry = GetBool(node, "AirOpsTelemetry", AirOpsTelemetry);
                 ShowAllAITweakables = GetBool(node, "ShowAllAITweakables", ShowAllAITweakables);
+                AltitudeFromSeaLevel = GetBool(node, "AltitudeFromSeaLevel", AltitudeFromSeaLevel);
                 WorldContactMarkers = GetBool(node, "WorldContactMarkers", WorldContactMarkers);
 
                 TargetListShowFriendlies = GetBool(node, "TargetListShowFriendlies", TargetListShowFriendlies);
@@ -207,6 +209,7 @@ namespace BDArmory.Avionics
                 node.AddValue("MaxRotateAttitude", MaxRotateAttitude);
                 node.AddValue("AirOpsTelemetry", AirOpsTelemetry);
                 node.AddValue("ShowAllAITweakables", ShowAllAITweakables);
+                node.AddValue("AltitudeFromSeaLevel", AltitudeFromSeaLevel);
                 node.AddValue("WorldContactMarkers", WorldContactMarkers);
 
                 node.AddValue("TargetListShowFriendlies", TargetListShowFriendlies);

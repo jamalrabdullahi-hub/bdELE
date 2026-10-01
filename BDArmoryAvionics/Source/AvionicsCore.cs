@@ -35,7 +35,7 @@ namespace BDArmory.Avionics
 
         void Start()
         {
-            menuRect = new Rect(Screen.width - 300, 90, 240, 488);
+            menuRect = new Rect(Screen.width - 300, 90, 240, 510);
             radarRectIndex = GUIUtils.RegisterGUIRect(new Rect());
             listRectIndex = GUIUtils.RegisterGUIRect(new Rect());
             gpsRectIndex = GUIUtils.RegisterGUIRect(new Rect());
@@ -184,7 +184,9 @@ namespace BDArmory.Avionics
             AvionicsSettings.ThreatBanner = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.ThreatBanner, "Missile / lock warning banner", AvionicsSettings.ThreatBanner ? sel : btn); y += 22;
             AvionicsSettings.FormationAssist = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.FormationAssist, "AI formation assist", AvionicsSettings.FormationAssist ? sel : btn); y += 22;
             AvionicsSettings.TakeoffAssist = GUI.Toggle(new Rect(8, y, hw2(w), 20), AvionicsSettings.TakeoffAssist, "AI takeoff assist", AvionicsSettings.TakeoffAssist ? sel : btn);
-            AvionicsSettings.AirOpsTelemetry = GUI.Toggle(new Rect(12 + hw2(w), y, hw2(w), 20), AvionicsSettings.AirOpsTelemetry, "AI telemetry log", AvionicsSettings.AirOpsTelemetry ? sel : btn); y += 26;
+            AvionicsSettings.AirOpsTelemetry = GUI.Toggle(new Rect(12 + hw2(w), y, hw2(w), 20), AvionicsSettings.AirOpsTelemetry, "AI telemetry log", AvionicsSettings.AirOpsTelemetry ? sel : btn); y += 22;
+            AvionicsSettings.AltitudeFromSeaLevel = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.AltitudeFromSeaLevel,
+                AvionicsSettings.AltitudeFromSeaLevel ? "AI altitudes: from sea level" : "AI altitudes: from ground (stock)", AvionicsSettings.AltitudeFromSeaLevel ? sel : btn); y += 26;
             var small = AvionicsDraw.LabelSmall;
 
             // C4ISR
