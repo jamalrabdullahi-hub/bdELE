@@ -94,6 +94,11 @@ namespace BDArmory.Avionics
         public static KeyCode KeySlewCamera = KeyCode.Keypad8;
         public static KeyCode KeyEject = KeyCode.P; // press twice
         public static KeyCode KeyCMProgram = KeyCode.Keypad0; // run the craft's countermeasure program
+        public static KeyCode KeyLMStrike = KeyCode.KeypadEnter;   // loitering munition: strike the crosshair / approve
+        public static KeyCode KeyLMManual = KeyCode.Keypad5;       // loitering munition: take / give control
+        public static KeyCode KeyLMDetonate = KeyCode.KeypadPeriod;
+        public static KeyCode KeyLMReturn = KeyCode.KeypadMinus;   // back to the operator's craft
+        public static bool ShowLM = false;
 
         // Ejection seats
         public static bool AutoEjectOnDestruction = true;
@@ -175,6 +180,11 @@ namespace BDArmory.Avionics
                 AutoEjectOnDestruction = GetBool(node, "AutoEjectOnDestruction", AutoEjectOnDestruction);
                 AutoEjectBeforeImpact = GetBool(node, "AutoEjectBeforeImpact", AutoEjectBeforeImpact);
                 KeyCMProgram = GetKey(node, "KeyCMProgram", KeyCMProgram);
+                KeyLMStrike = GetKey(node, "KeyLMStrike", KeyLMStrike);
+                KeyLMManual = GetKey(node, "KeyLMManual", KeyLMManual);
+                KeyLMDetonate = GetKey(node, "KeyLMDetonate", KeyLMDetonate);
+                KeyLMReturn = GetKey(node, "KeyLMReturn", KeyLMReturn);
+                ShowLM = GetBool(node, "ShowLM", ShowLM);
                 ThreatBanner = GetBool(node, "ThreatBanner", ThreatBanner);
                 Radar3DShowThreats = GetBool(node, "Radar3DShowThreats", Radar3DShowThreats);
 
@@ -253,6 +263,11 @@ namespace BDArmory.Avionics
                 node.AddValue("AutoEjectOnDestruction", AutoEjectOnDestruction);
                 node.AddValue("AutoEjectBeforeImpact", AutoEjectBeforeImpact);
                 node.AddValue("KeyCMProgram", KeyCMProgram.ToString());
+                node.AddValue("KeyLMStrike", KeyLMStrike.ToString());
+                node.AddValue("KeyLMManual", KeyLMManual.ToString());
+                node.AddValue("KeyLMDetonate", KeyLMDetonate.ToString());
+                node.AddValue("KeyLMReturn", KeyLMReturn.ToString());
+                node.AddValue("ShowLM", ShowLM);
                 node.AddValue("ThreatBanner", ThreatBanner);
                 node.AddValue("Radar3DShowThreats", Radar3DShowThreats);
 

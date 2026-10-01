@@ -38,6 +38,25 @@ EW (Electronic warfare window):
   Jammer modes   per craft (terminal part menu, editor window, EW window): Auto (BDArmory guard mode),
                  Barrage (always jamming, e.g. an EW escort), Silent (never jams).
 
+Loitering munitions (man in the loop)
+-------------------------------------
+Build: probe core + engine + wings + a BDArmory warhead (+ a HullCam VDS camera for the operator's view).
+On the probe core's part menu set "Loitering munition: Yes" and its strike mode, target type, loiter altitude
+(sea level) / radius, cruise speed, search range, dive angle and proximity fuze. Mount it on a launcher craft.
+It arms when it separates (or "Arm / launch"), flies to the launcher's GPS target (else 2 km ahead), circles and
+searches for enemies of the launcher's team (Any / Ground+ships / Air / Radars for SEAD), line of sight only.
+  Autonomous  strikes the first target it finds
+  Approval    reports the target and circles until the operator approves (or waves off)
+  Designate   strikes only what the operator designates
+Terminal: level approach, then a dive at the set angle (top attack); proximity, closest-approach and impact fuzes.
+Loitering munitions window (menu): approve, wave off, strike the selected contact or GPS target, move the
+loiter point, watch through its camera, take control, detonate, back to the home craft.
+In its camera (HUD with crosshair, target box, altitude, speed, fuel):
+  Keypad Enter  strike what's under the crosshair (craft or ground point) / approve the reported target
+  Keypad 5      take / give back control (you fly it with the normal controls; fuzes stay live)
+  Keypad .      detonate        Keypad -   back to the home craft (also automatic after it detonates)
+Its kills go to the launcher's crew records (kill.LM). Keys can be changed in Avionics.cfg.
+
 Kill log and after-action report
 --------------------------------
 Every BDArmory hit (guns, rockets, missiles, nukes, fire, rams) is credited to the craft that caused it. A craft is

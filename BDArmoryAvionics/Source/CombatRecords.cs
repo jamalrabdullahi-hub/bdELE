@@ -486,6 +486,12 @@ namespace BDArmory.Avionics
                 var crewNow = new List<string>();
                 if (killer?.vessel != null) foreach (var k in killer.vessel.GetVesselCrew()) crewNow.Add(k.name);
                 else if (killer != null) crewNow.AddRange(killer.crew);
+                bool byMunition = false;
+                if (crewNow.Count == 0)
+                {
+                    var op = LoiteringMunitions.OperatorOf(killerName); // a loitering munition's kill belongs to its launcher / operator crew
+                    if (op != null) { foreach (var k in op.GetVesselCrew()) crewNow.Add(k.name); byMunition = true; }
+                }
                 if (killer != null) killer.kills++;
                 foreach (var n in crewNow)
                 {
@@ -496,6 +502,7 @@ namespace BDArmory.Avionics
                     o.Count("kill.vs." + vDom);
                     o.Count(c.manned ? "kill.manned" : "kill.unmanned");
                     o.Count("kill." + kind);
+                    if (byMunition) o.Count("kill.LM");
                     killsThisBattle[n] = (killsThisBattle.TryGetValue(n, out int k) ? k : 0) + 1;
                     OperatorEffects.CreditKillXp(o, kind == WeaponKind.Gun);
                     CombatOperators.Review(o, killsThisBattle[n]);
