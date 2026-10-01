@@ -80,6 +80,13 @@ Baikerbanur). Bases tab: click a site's owner button to cycle owner; click an ow
 - Damage: BDArmory explosions within 1.5 km hurt the base (by warhead size); bombs/missiles (5 kg+) within 60 m of
   the runway close it for hours. Health repairs 25 %/day. Below 60 % Damaged, at 0 Destroyed (no runway, no service).
 - Capture: armed enemy ground units at the base for 60 s with no armed defenders within 1.5 km take it.
+- AI commander (Theatre > Commander): each AI faction plans on game time (Passive / Defensive / Normal 3 h /
+  Aggressive 1 h). It sends Strike/SEAD-role aircraft from its bases at your nearest base and scrambles Fighter-role
+  aircraft at your aircraft within 80 km of its bases. Give aircraft at its bases a role in the base panel.
+  Sorties fly on game time (also in the Space Center and during warp). Within 25 km of you they become real craft
+  (spawned airborne from the craft file, guard mode + pilot AI, tasked with the C2 orders) and fight for real;
+  away from you a strike is resolved by numbers (base defences = stationed Fighters). Losses come out of the
+  inventory, survivors return. Detected sorties (your radar or 30 km of a unit) show on the C2 map as diamonds.
 
 Kill log and after-action report
 --------------------------------

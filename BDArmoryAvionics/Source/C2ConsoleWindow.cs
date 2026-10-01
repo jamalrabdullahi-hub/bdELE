@@ -249,6 +249,20 @@ namespace BDArmory.Avionics
                         labels.Add((bp + new Vector2(12, 2), fb.site == "Runway" ? "KSC" : fb.site, bc));
                     }
 
+                // AI sorties (virtual) the player's side can see
+                if (FactionsScenario.Instance != null)
+                    foreach (var fl in FactionsScenario.Instance.flights)
+                    {
+                        if (fl.state == FlightState.Materialized || fl.state == FlightState.Done || !AICommander.Detected(fl)) continue;
+                        var fp = ToMap(m, body, fl.lat, fl.lon);
+                        if (!In(m, fp)) continue;
+                        var fac = FactionsScenario.FactionByName(fl.faction);
+                        var fc = fac != null ? fac.colour : AvionicsDraw.Hostile;
+                        AvionicsDraw.Diamond(fp, 8, 2f, fc);
+                        AvionicsDraw.Diamond(fp, 3, 2f, fc);
+                        labels.Add((fp + new Vector2(10, -7), $"{fl.Callsign} x{fl.alive}", fc));
+                    }
+
                 // Loitering munitions: loiter ring, line to target, symbol
                 foreach (var lm in LoiteringMunitions.Flying(net.team))
                 {

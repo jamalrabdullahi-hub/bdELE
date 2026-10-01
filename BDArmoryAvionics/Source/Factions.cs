@@ -73,7 +73,7 @@ namespace BDArmory.Avionics
             n.AddValue("fuel", fuel.ToString("R", ci)); n.AddValue("fuelCap", fuelCap.ToString("R", ci));
             n.AddValue("ordnance", ordnance.ToString("R", ci)); n.AddValue("ordnanceCap", ordnanceCap.ToString("R", ci));
             n.AddValue("lastDailyUT", lastDailyUT.ToString("R", ci));
-            foreach (var i in inventory) { var c = n.AddNode("AIRCRAFT"); c.AddValue("craft", i.craft); c.AddValue("authorized", i.authorized); c.AddValue("available", i.available); c.AddValue("lost", i.lost); c.AddValue("path", i.path ?? ""); }
+            foreach (var i in inventory) { var c = n.AddNode("AIRCRAFT"); c.AddValue("craft", i.craft); c.AddValue("authorized", i.authorized); c.AddValue("available", i.available); c.AddValue("lost", i.lost); c.AddValue("path", i.path ?? ""); c.AddValue("role", i.role); }
         }
 
         public static Base Load(ConfigNode n)
@@ -95,6 +95,7 @@ namespace BDArmory.Avionics
             foreach (var c in n.GetNodes("AIRCRAFT"))
             {
                 var i = new InvItem { craft = c.GetValue("craft") ?? "", path = c.GetValue("path") ?? "" };
+                i.role = c.GetValue("role") ?? "Fighter";
                 int.TryParse(c.GetValue("authorized"), out i.authorized); int.TryParse(c.GetValue("available"), out i.available); int.TryParse(c.GetValue("lost"), out i.lost);
                 b.inventory.Add(i);
             }
@@ -207,6 +208,10 @@ namespace BDArmory.Avionics
         public static FactionsScenario Instance;
         public readonly List<Faction> factions = new();
         public readonly List<Base> bases = new();
+        public readonly List<AirFlight> flights = new();
+        public readonly List<CommanderSettings> commanders = new();
+        public readonly List<string> theatreLog = new();
+        public int nextFlightId;
         bool seeded;
 
         public override void OnAwake() => Instance = this;
@@ -221,6 +226,10 @@ namespace BDArmory.Avionics
             node.AddValue("seeded", seeded);
             foreach (var f in factions) f.Save(node.AddNode("FACTION"));
             foreach (var b in bases) b.Save(node.AddNode("BASE"));
+            node.AddValue("nextFlightId", nextFlightId);
+            foreach (var fl in flights) fl.Save(node.AddNode("FLIGHT"));
+            foreach (var c in commanders) { var n = node.AddNode("COMMANDER"); n.AddValue("faction", c.faction); n.AddValue("aggression", c.aggression); n.AddValue("nextPlanUT", c.nextPlanUT.ToString("R", System.Globalization.CultureInfo.InvariantCulture)); }
+            var log = node.AddNode("THEATRE_LOG"); foreach (var l in theatreLog) log.AddValue("e", l);
         }
 
         public override void OnLoad(ConfigNode node)
@@ -229,6 +238,16 @@ namespace BDArmory.Avionics
             bool.TryParse(node.GetValue("seeded"), out seeded);
             foreach (var n in node.GetNodes("FACTION")) factions.Add(Faction.Load(n));
             foreach (var n in node.GetNodes("BASE")) bases.Add(Base.Load(n));
+            flights.Clear(); commanders.Clear(); theatreLog.Clear();
+            int.TryParse(node.GetValue("nextFlightId"), out nextFlightId);
+            foreach (var n in node.GetNodes("FLIGHT")) flights.Add(AirFlight.Load(n));
+            foreach (var n in node.GetNodes("COMMANDER"))
+            {
+                var c = new CommanderSettings { faction = n.GetValue("faction") ?? "", aggression = n.GetValue("aggression") ?? "Normal" };
+                double.TryParse(n.GetValue("nextPlanUT"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out c.nextPlanUT);
+                commanders.Add(c);
+            }
+            var log = node.GetNode("THEATRE_LOG"); if (log != null) theatreLog.AddRange(log.GetValues("e"));
         }
 
         void Start() => StartCoroutine(SeedWhenReady());
@@ -239,6 +258,7 @@ namespace BDArmory.Avionics
             if (Time.time < nextTick || HighLogic.CurrentGame == null) return;
             nextTick = Time.time + 2f;
             BaseLogistics.Daily(this);
+            try { AICommander.Tick(); } catch (Exception e) { Debug.LogWarning($"[BDArmoryAvionics]: AI commander: {e}"); }
         }
 
         /// <summary>First run: Blue (player, team A) holds KSC and Kerman Atoll; Red (AI, team B) holds Kojave Sands and Baikerbanur.</summary>
@@ -371,10 +391,11 @@ namespace BDArmory.Avionics
             var btn = BDArmorySetup.ButtonStyle; var sel = BDArmorySetup.SelectedButtonStyle;
             var sc = FactionsScenario.Instance;
             float w = rect.width - 16, y = 22;
-            string[] tabs = ["Factions", "Bases"];
+            string[] tabs = ["Factions", "Bases", "Commander"];
             for (int i = 0; i < tabs.Length; i++) if (GUI.Button(new Rect(8 + i * 104, y, 100, 22), tabs[i], tab == i ? sel : btn)) tab = i;
             y += 28;
 
+            if (tab == 2) { DrawCommander(new Rect(8, y, w, rect.height - y - 8)); GUI.DragWindow(new Rect(0, 0, rect.width - 22, 20)); return; }
             if (tab == 0)
             {
                 for (int i = 0; i < sc.factions.Count; i++)
@@ -425,6 +446,46 @@ namespace BDArmory.Avionics
                 else AvionicsDraw.ColorLabel(new Rect(8, rect.height - 22, w, 16), "Click an owned base's name for its stock, aircraft and damage.", AvionicsDraw.LabelSmall, AvionicsDraw.ScopeText);
             }
             GUI.DragWindow(new Rect(0, 0, rect.width - 22, 20));
+        }
+
+        Vector2 logScroll;
+
+        void DrawCommander(Rect r)
+        {
+            var btn = BDArmorySetup.ButtonStyle; var sel = BDArmorySetup.SelectedButtonStyle; var small = AvionicsDraw.LabelSmall;
+            var sc = FactionsScenario.Instance;
+            float x = r.x, y = r.y, w = r.width;
+            foreach (var f in sc.factions)
+            {
+                if (f.IsPlayer) continue;
+                var cs = AICommander.SettingsFor(f);
+                AvionicsDraw.FilledRect(new Rect(x, y + 3, 12, 14), f.colour);
+                AvionicsDraw.ColorLabel(new Rect(x + 18, y + 2, 160, 16), f.name, AvionicsDraw.Label, AvionicsDraw.HudText);
+                int li = Array.IndexOf(CommanderSettings.Levels, cs.aggression);
+                if (GUI.Button(new Rect(x + 180, y, 110, 20), cs.aggression, btn)) cs.aggression = CommanderSettings.Levels[(li + 1) % CommanderSettings.Levels.Length];
+                if (GUI.Button(new Rect(x + 296, y, 90, 20), "Plan now", btn)) cs.nextPlanUT = Planetarium.GetUniversalTime();
+                double next = cs.nextPlanUT - Planetarium.GetUniversalTime();
+                AvionicsDraw.ColorLabel(new Rect(x + 392, y + 3, w - 392, 16), cs.aggression == "Passive" ? "inactive" : $"next plan {KSPUtil.PrintTimeCompact(Math.Max(0, next), false)}", small, AvionicsDraw.ScopeText);
+                y += 24;
+            }
+            AICommander.RevealFlights = GUI.Toggle(new Rect(x, y, 200, 20), AICommander.RevealFlights, "Reveal AI flights on C2 map", AICommander.RevealFlights ? sel : btn);
+            y += 26;
+            AvionicsDraw.ColorLabel(new Rect(x, y, w, 14), "ACTIVE SORTIES", AvionicsDraw.Header, AvionicsDraw.HudText); y += 16;
+            if (sc.flights.Count == 0) { AvionicsDraw.ColorLabel(new Rect(x, y, w, 14), "none", small, AvionicsDraw.ScopeText); y += 14; }
+            var body = FlightGlobals.GetHomeBody();
+            foreach (var fl in sc.flights)
+            {
+                var f = FactionsScenario.FactionByName(fl.faction);
+                double km = (AICommander.Position(fl) - body.GetWorldSurfacePosition(fl.tLat, fl.tLon, fl.alt)).magnitude / 1000;
+                AvionicsDraw.ColorLabel(new Rect(x, y, w, 14), $"{fl.Callsign}  {fl.mission}  {fl.alive}/{fl.count}x {fl.craft}  {fl.state}  {BaseLogistics.Name(FactionsScenario.BaseAt(fl.fromBase) ?? new Base { site = fl.fromBase })} > {(fl.state == FlightState.Returning ? "home" : string.IsNullOrEmpty(fl.targetBase) ? "target" : fl.targetBase)}  {km:F0} km to go", small, f != null ? f.colour : AvionicsDraw.HudText);
+                y += 14;
+            }
+            y += 6;
+            AvionicsDraw.ColorLabel(new Rect(x, y, w, 14), "THEATRE LOG", AvionicsDraw.Header, AvionicsDraw.HudText); y += 16;
+            logScroll = GUI.BeginScrollView(new Rect(x, y, w, r.yMax - y - 40), logScroll, new Rect(0, 0, w - 18, sc.theatreLog.Count * 14));
+            for (int i = 0; i < sc.theatreLog.Count; i++) AvionicsDraw.ColorLabel(new Rect(0, i * 14, w - 20, 14), sc.theatreLog[i], small, AvionicsDraw.ScopeText);
+            GUI.EndScrollView();
+            AvionicsDraw.ColorLabel(new Rect(x, r.yMax - 34, w, 30), "AI factions launch strikes (Strike/SEAD-role aircraft) at your nearest base and scramble Fighters at your aircraft\nnear their bases. Sorties appear as real craft within 25 km of you; elsewhere they are resolved by numbers.", small, AvionicsDraw.ScopeText);
         }
 
         static string NextTeam(string t) => t.Length == 1 && t[0] >= 'A' && t[0] < 'Z' ? ((char)(t[0] + 1)).ToString() : "A";

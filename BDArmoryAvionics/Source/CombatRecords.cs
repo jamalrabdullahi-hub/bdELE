@@ -256,6 +256,7 @@ namespace BDArmory.Avionics
         void OnVesselWillDestroy(Vessel v)
         {
             if (v == null || leaving) return;
+            if (Materializer.despawning.Contains(v.persistentId)) { combatants.Remove(v.persistentId); return; } // AI flight leaving the area, not a loss
             if (combatants.TryGetValue(v.persistentId, out var c)) Safe(() => Die(c, "destroyed"));
         }
 

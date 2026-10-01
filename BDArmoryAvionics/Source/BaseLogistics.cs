@@ -16,6 +16,8 @@ namespace BDArmory.Avionics
     {
         public string craft = "", path = "";
         public int authorized = 2, available = 2, lost;
+        public string role = "Fighter"; // Fighter, Strike, SEAD - what the AI commander uses it for
+        public static readonly string[] Roles = ["Fighter", "Strike", "SEAD"];
     }
 
     /// <summary>
@@ -93,6 +95,9 @@ namespace BDArmory.Avionics
             launched[v.persistentId] = (b, item.craft);
             Debug.Log($"[BDArmoryAvionics]: {v.GetName()} launched from {b.site}: {item.available}/{item.authorized} left");
         }
+
+        public static void Track(Vessel v, Base b, string craft) => launched[v.persistentId] = (b, craft);
+        public static void Untrack(Vessel v) => launched.Remove(v.persistentId);
 
         public static void Subscribe()
         {
@@ -310,7 +315,8 @@ namespace BDArmory.Avionics
             {
                 var it = b.inventory[i];
                 if (y > r.yMax - 48) break;
-                AvionicsDraw.ColorLabel(new Rect(x, y + 2, w - 200, 16), $"{it.craft}   {it.available}/{it.authorized}   lost {it.lost}", AvionicsDraw.Label, it.available > 0 ? AvionicsDraw.HudText : AvionicsDraw.Unknown);
+                AvionicsDraw.ColorLabel(new Rect(x, y + 2, w - 270, 16), $"{it.craft}   {it.available}/{it.authorized}   lost {it.lost}", AvionicsDraw.Label, it.available > 0 ? AvionicsDraw.HudText : AvionicsDraw.Unknown);
+                if (GUI.Button(new Rect(x + w - 266, y, 66, 18), it.role, btn)) it.role = InvItem.Roles[(Array.IndexOf(InvItem.Roles, it.role) + 1) % InvItem.Roles.Length];
                 if (GUI.Button(new Rect(x + w - 196, y, 28, 18), "-", btn)) { it.authorized = Mathf.Max(0, it.authorized - 1); it.available = Mathf.Min(it.available, it.authorized); }
                 if (GUI.Button(new Rect(x + w - 164, y, 28, 18), "+", btn)) it.authorized++;
                 if (GUI.Button(new Rect(x + w - 132, y, 70, 18), "Fill", btn)) it.available = it.authorized;
