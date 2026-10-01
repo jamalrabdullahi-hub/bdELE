@@ -61,6 +61,7 @@ namespace BDArmory.Avionics
         public static bool ShowAllAITweakables = true; // show every pilot AI setting (incl. Unclamp tuning) without KSP's Advanced Tweakables
         public static bool AltitudeFromSeaLevel = true; // AI altitude settings measured from sea level (true) or the ground below (stock)
         public static bool CombatOperators = true;      // crew skill affects guard mode / weapons / AI; Astronaut Complex training
+        public static bool AARPopup = true;             // open the after-action report when an engagement ends
         public static bool WorldContactMarkers = false;
 
         // Target list
@@ -140,6 +141,7 @@ namespace BDArmory.Avionics
                 ShowAllAITweakables = GetBool(node, "ShowAllAITweakables", ShowAllAITweakables);
                 AltitudeFromSeaLevel = GetBool(node, "AltitudeFromSeaLevel", AltitudeFromSeaLevel);
                 CombatOperators = GetBool(node, "CombatOperators", CombatOperators);
+                AARPopup = GetBool(node, "AARPopup", AARPopup);
                 WorldContactMarkers = GetBool(node, "WorldContactMarkers", WorldContactMarkers);
 
                 TargetListShowFriendlies = GetBool(node, "TargetListShowFriendlies", TargetListShowFriendlies);
@@ -213,6 +215,7 @@ namespace BDArmory.Avionics
                 node.AddValue("ShowAllAITweakables", ShowAllAITweakables);
                 node.AddValue("AltitudeFromSeaLevel", AltitudeFromSeaLevel);
                 node.AddValue("CombatOperators", CombatOperators);
+                node.AddValue("AARPopup", AARPopup);
                 node.AddValue("WorldContactMarkers", WorldContactMarkers);
 
                 node.AddValue("TargetListShowFriendlies", TargetListShowFriendlies);

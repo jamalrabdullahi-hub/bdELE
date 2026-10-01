@@ -35,7 +35,7 @@ namespace BDArmory.Avionics
 
         void Start()
         {
-            menuRect = new Rect(Screen.width - 300, 90, 240, 532);
+            menuRect = new Rect(Screen.width - 300, 90, 240, 554);
             radarRectIndex = GUIUtils.RegisterGUIRect(new Rect());
             listRectIndex = GUIUtils.RegisterGUIRect(new Rect());
             gpsRectIndex = GUIUtils.RegisterGUIRect(new Rect());
@@ -187,7 +187,9 @@ namespace BDArmory.Avionics
             AvionicsSettings.AirOpsTelemetry = GUI.Toggle(new Rect(12 + hw2(w), y, hw2(w), 20), AvionicsSettings.AirOpsTelemetry, "AI telemetry log", AvionicsSettings.AirOpsTelemetry ? sel : btn); y += 22;
             AvionicsSettings.AltitudeFromSeaLevel = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.AltitudeFromSeaLevel,
                 AvionicsSettings.AltitudeFromSeaLevel ? "AI altitudes: from sea level" : "AI altitudes: from ground (stock)", AvionicsSettings.AltitudeFromSeaLevel ? sel : btn); y += 22;
-            AvionicsSettings.CombatOperators = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.CombatOperators, "Combat operators (crew skill)", AvionicsSettings.CombatOperators ? sel : btn); y += 26;
+            AvionicsSettings.CombatOperators = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.CombatOperators, "Combat operators (crew skill)", AvionicsSettings.CombatOperators ? sel : btn); y += 22;
+            AfterActionWindow.Show = GUI.Toggle(new Rect(8, y, hw2(w), 20), AfterActionWindow.Show, CombatLog.Live != null ? "AAR (live)" : "After-action rpt", AfterActionWindow.Show ? sel : btn);
+            AvionicsSettings.AARPopup = GUI.Toggle(new Rect(12 + hw2(w), y, hw2(w), 20), AvionicsSettings.AARPopup, "AAR at battle end", AvionicsSettings.AARPopup ? sel : btn); y += 26;
             var small = AvionicsDraw.LabelSmall;
 
             // C4ISR

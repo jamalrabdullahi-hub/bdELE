@@ -23,6 +23,15 @@ namespace BDArmory.Avionics
         public int sorties, kills;
         public int training = -1;      // discipline being trained, -1 = none
         public double trainingEndUT;
+        public int rank;               // highest rank reached (never demoted)
+        public string squadron = "";
+        public bool kia;
+        public readonly Dictionary<string, int> stats = new();   // combat record: kill.A-A, kill.manned, kill.Gun, losses, battles...
+        public readonly HashSet<string> medals = new();
+
+        public int Stat(string key) => stats.TryGetValue(key, out int v) ? v : 0;
+        public void Count(string key, int n = 1) => stats[key] = Stat(key) + n;
+        public int LevelSum { get { int s = 0; foreach (var l in level) s += l; return s; } }
 
         public int this[Discipline d] => level[(int)d];
         public static float XpForNext(int lvl) => 100f * (lvl + 1);
@@ -49,6 +58,12 @@ namespace BDArmory.Avionics
             n.AddValue("kills", kills);
             n.AddValue("training", training);
             n.AddValue("trainingEndUT", trainingEndUT.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+            n.AddValue("rank", rank);
+            n.AddValue("squadron", squadron ?? "");
+            n.AddValue("kia", kia);
+            var st = new List<string>(); foreach (var kv in stats) st.Add($"{kv.Key}:{kv.Value}");
+            n.AddValue("stats", string.Join(";", st));
+            n.AddValue("medals", string.Join(";", medals));
         }
 
         public static Operator Load(ConfigNode n)
@@ -66,6 +81,15 @@ namespace BDArmory.Avionics
             int.TryParse(n.GetValue("kills"), out o.kills);
             if (!int.TryParse(n.GetValue("training"), out o.training)) o.training = -1;
             double.TryParse(n.GetValue("trainingEndUT"), System.Globalization.NumberStyles.Float, ci, out o.trainingEndUT);
+            int.TryParse(n.GetValue("rank"), out o.rank);
+            o.squadron = n.GetValue("squadron") ?? "";
+            bool.TryParse(n.GetValue("kia"), out o.kia);
+            foreach (var kv in (n.GetValue("stats") ?? "").Split(';'))
+            {
+                int c = kv.LastIndexOf(':');
+                if (c > 0 && int.TryParse(kv.Substring(c + 1), out int v)) o.stats[kv.Substring(0, c)] = v;
+            }
+            foreach (var m in (n.GetValue("medals") ?? "").Split(';')) if (m.Length > 0) o.medals.Add(m);
             return o;
         }
     }
@@ -78,8 +102,16 @@ namespace BDArmory.Avionics
         readonly Dictionary<string, Operator> ops = new();
         float nextCheck;
 
-        public override void OnAwake() { Instance = this; }
-        void OnDestroy() { if (Instance == this) Instance = null; }
+        public override void OnAwake()
+        {
+            Instance = this;
+            GameEvents.onKerbalStatusChange.Add(OnKerbalStatus);
+        }
+        void OnDestroy()
+        {
+            GameEvents.onKerbalStatusChange.Remove(OnKerbalStatus);
+            if (Instance == this) Instance = null;
+        }
 
         public static Operator Get(string kerbal)
         {
@@ -96,19 +128,91 @@ namespace BDArmory.Avionics
             return o;
         }
 
+        public static IEnumerable<Operator> All => Instance != null ? Instance.ops.Values : (IEnumerable<Operator>)Array.Empty<Operator>();
+
+        // ---- Squadrons and battle reports ----
+
+        public readonly List<Squadron> squadrons = new();
+        public readonly List<BattleReport> battles = new();   // newest first
+        public const int MaxBattles = 25;
+
+        public static Squadron FindSquadron(string name)
+        {
+            if (Instance == null || string.IsNullOrEmpty(name)) return null;
+            foreach (var s in Instance.squadrons) if (s.name == name) return s;
+            return null;
+        }
+
+        public static IEnumerable<Operator> Members(Squadron s)
+        {
+            foreach (var o in All) if (o.squadron == s.name) yield return o;
+        }
+
+        /// <summary>The squadron's commander: the one assigned, else its highest ranked living member.</summary>
+        public static string Commander(Squadron s)
+        {
+            Operator best = null;
+            foreach (var o in Members(s))
+            {
+                if (o.kia) continue;
+                if (o.name == s.commander) return o.name;
+                if (best == null || Ranks.Merit(o) > Ranks.Merit(best)) best = o;
+            }
+            return best?.name;
+        }
+
+        public static void AddBattle(BattleReport b)
+        {
+            if (Instance == null || b == null) return;
+            Instance.battles.Insert(0, b);
+            while (Instance.battles.Count > MaxBattles) Instance.battles.RemoveAt(Instance.battles.Count - 1);
+        }
+
+        /// <summary>Check for promotion and medals after a kerbal's record changed.</summary>
+        public static void Review(Operator o, int killsThisBattle = 0)
+        {
+            if (o == null) return;
+            int r = Ranks.Index(o);
+            if (r > o.rank)
+            {
+                o.rank = r;
+                ScreenMessages.PostScreenMessage($"{o.name} promoted to {Ranks.Names[r]}", 5f, ScreenMessageStyle.UPPER_CENTER);
+                Debug.Log($"[BDArmoryAvionics]: {o.name} promoted to {Ranks.Names[r]}");
+            }
+            foreach (var m in Medals.Earned(o, killsThisBattle))
+                if (o.medals.Add(m))
+                {
+                    ScreenMessages.PostScreenMessage($"{o.name} awarded: {m}", 5f, ScreenMessageStyle.UPPER_CENTER);
+                    Debug.Log($"[BDArmoryAvionics]: {o.name} awarded {m}");
+                }
+        }
+
         public override void OnSave(ConfigNode node)
         {
             foreach (var o in ops.Values) o.Save(node.AddNode("OPERATOR"));
+            foreach (var s in squadrons) s.Save(node.AddNode("SQUADRON"));
+            foreach (var b in battles) b.Save(node.AddNode("BATTLE"));
         }
 
         public override void OnLoad(ConfigNode node)
         {
-            ops.Clear();
+            ops.Clear(); squadrons.Clear(); battles.Clear();
             foreach (var n in node.GetNodes("OPERATOR"))
             {
                 var o = Operator.Load(n);
                 if (!string.IsNullOrEmpty(o.name)) ops[o.name] = o;
             }
+            foreach (var n in node.GetNodes("SQUADRON")) { var s = Squadron.Load(n); if (!string.IsNullOrEmpty(s.name)) squadrons.Add(s); }
+            foreach (var n in node.GetNodes("BATTLE")) battles.Add(BattleReport.Load(n));
+        }
+
+        void OnKerbalStatus(ProtoCrewMember pcm, ProtoCrewMember.RosterStatus from, ProtoCrewMember.RosterStatus to)
+        {
+            if (pcm == null || to != ProtoCrewMember.RosterStatus.Dead || !ops.TryGetValue(pcm.name, out var o) || o.kia) return;
+            o.kia = true;
+            o.Count("kia");
+            CombatLog.Note($"KIA: {Ranks.Short(o)} {pcm.name}", true);
+            Debug.Log($"[BDArmoryAvionics]: {pcm.name} killed in action");
         }
 
         // ---- Training ----
@@ -158,6 +262,7 @@ namespace BDArmory.Avionics
                 o.xp[o.training] = 0;
                 o.training = -1;
                 ScreenMessages.PostScreenMessage($"{o.name} completed {d} training: level {o[d]}", 5f, ScreenMessageStyle.UPPER_CENTER);
+                Review(o);
             }
         }
     }
@@ -170,32 +275,60 @@ namespace BDArmory.Avionics
     public class OperatorEffects : MonoBehaviour
     {
         static readonly Dictionary<PartModule, Dictionary<string, float>> originals = new();
-        static readonly Dictionary<Vessel, (Vessel target, float time)> lastTargets = new();
+        internal static readonly Dictionary<Vessel, (Vessel target, float time)> lastTargets = new();
+        static readonly HashSet<string> ledSquadrons = new(); // squadrons whose commander is flying a combat craft here
         float nextApply, nextXp;
 
         void Start()
         {
             originals.Clear();
             lastTargets.Clear();
-            GameEvents.onVesselWillDestroy.Add(OnVesselDestroyed);
+            ledSquadrons.Clear();
             GameEvents.onVesselRecovered.Add(OnRecovered);
         }
 
         void OnDestroy()
         {
-            GameEvents.onVesselWillDestroy.Remove(OnVesselDestroyed);
             GameEvents.onVesselRecovered.Remove(OnRecovered);
         }
 
-        /// <summary>Best level in a discipline among the crew; uncrewed = baseline.</summary>
+        /// <summary>Best level in a discipline among the crew; uncrewed = baseline.
+        /// A squadron flies one level better (except Command) while its commander is flying a combat craft in the same battle.</summary>
         public static int Skill(Vessel v, Discipline d)
         {
             if (v == null) return Operator.Baseline;
             var crew = v.GetVesselCrew();
             if (crew.Count == 0 || CombatOperators.Instance == null) return Operator.Baseline;
             int best = 0;
-            foreach (var c in crew) { var o = CombatOperators.Get(c.name); if (o != null) best = Mathf.Max(best, o[d]); }
+            foreach (var c in crew)
+            {
+                var o = CombatOperators.Get(c.name);
+                if (o == null) continue;
+                int lvl = o[d];
+                if (d != Discipline.Command && LedBonus(o)) lvl = Mathf.Min(lvl + 1, Operator.MaxLevel);
+                best = Mathf.Max(best, lvl);
+            }
             return best;
+        }
+
+        public static bool LedBonus(Operator o) => !string.IsNullOrEmpty(o.squadron) && ledSquadrons.Contains(o.squadron);
+
+        static void UpdateLeadership()
+        {
+            ledSquadrons.Clear();
+            if (CombatOperators.Instance == null) return;
+            foreach (var s in CombatOperators.Instance.squadrons)
+            {
+                string cmd = CombatOperators.Commander(s);
+                if (cmd == null) continue;
+                foreach (var v in FlightGlobals.VesselsLoaded)
+                {
+                    if (v == null || v.packed || v.ActiveController().WM == null) continue;
+                    bool aboard = false;
+                    foreach (var c in v.GetVesselCrew()) if (c.name == cmd) { aboard = true; break; }
+                    if (aboard) { ledSquadrons.Add(s.name); break; }
+                }
+            }
         }
 
         public static string CrewSummary(Vessel v)
@@ -212,7 +345,7 @@ namespace BDArmory.Avionics
         void FixedUpdate()
         {
             if (!HighLogic.LoadedSceneIsFlight || !AvionicsSettings.CombatOperators || CombatOperators.Instance == null) return;
-            if (Time.time >= nextApply) { nextApply = Time.time + 2f; ApplyAll(); }
+            if (Time.time >= nextApply) { nextApply = Time.time + 2f; UpdateLeadership(); ApplyAll(); }
             if (Time.time >= nextXp) { nextXp = Time.time + 10f; CombatXp(); }
         }
 
@@ -299,24 +432,12 @@ namespace BDArmory.Avionics
             }
         }
 
-        void OnVesselDestroyed(Vessel dead)
+        /// <summary>Kill XP for the crew of the craft credited by the combat log.</summary>
+        public static void CreditKillXp(Operator o, bool gun)
         {
-            if (dead == null || !AvionicsSettings.CombatOperators) return;
-            foreach (var kv in lastTargets)
-            {
-                if (kv.Value.target != dead || Time.time - kv.Value.time > 20f || kv.Key == null) continue;
-                var wm = kv.Key.ActiveController().WM;
-                bool gun = wm != null && wm.selectedWeapon is ModuleWeapon;
-                foreach (var c in kv.Key.GetVesselCrew())
-                {
-                    var o = CombatOperators.Get(c.name);
-                    if (o == null) continue;
-                    o.kills++;
-                    Award(o, gun ? Discipline.Gunnery : Discipline.Weapons, 40f);
-                    Award(o, Discipline.Pilot, 20f);
-                }
-                ScreenMessages.PostScreenMessage($"{kv.Key.GetName()}: kill credited ({dead.GetName()})", 3f, ScreenMessageStyle.UPPER_LEFT);
-            }
+            if (!AvionicsSettings.CombatOperators) return;
+            Award(o, gun ? Discipline.Gunnery : Discipline.Weapons, 40f);
+            Award(o, Discipline.Pilot, 20f);
         }
 
         void OnRecovered(ProtoVessel pv, bool quick)
@@ -328,109 +449,13 @@ namespace BDArmory.Avionics
                 if (o == null) continue;
                 o.sorties++;
                 for (int i = 0; i < 5; i++) Award(o, (Discipline)i, 10f);
+                CombatOperators.Review(o);
             }
         }
 
         static void Award(Operator o, Discipline d, float xp)
         {
             if (o.AddXp(d, xp)) ScreenMessages.PostScreenMessage($"{o.name}: {d} level {o[d]} (combat experience)", 4f, ScreenMessageStyle.UPPER_CENTER);
-        }
-    }
-
-    /// <summary>Combat Operators panel, shown beside KSP's Astronaut Complex.</summary>
-    [KSPAddon(KSPAddon.Startup.SpaceCentre, false)]
-    public class OperatorsWindow : MonoBehaviour
-    {
-        bool show;
-        Rect rect = new(Screen.width - 520, 80, 480, 600);
-        Vector2 scroll;
-        string selected, message;
-
-        void Start()
-        {
-            GameEvents.onGUIAstronautComplexSpawn.Add(OnOpen);
-            GameEvents.onGUIAstronautComplexDespawn.Add(OnClose);
-        }
-
-        void OnDestroy()
-        {
-            GameEvents.onGUIAstronautComplexSpawn.Remove(OnOpen);
-            GameEvents.onGUIAstronautComplexDespawn.Remove(OnClose);
-        }
-
-        void OnOpen() => show = AvionicsSettings.CombatOperators;
-        void OnClose() => show = false;
-
-        void OnGUI()
-        {
-            if (!show || CombatOperators.Instance == null) return;
-            rect = GUI.Window(71730330, rect, Draw, "Combat Operators", BDArmorySetup.BDGuiSkin.window);
-        }
-
-        static readonly string[] Names = ["Pilot", "Gunnery", "Weapons", "Sensors/EW", "Command"];
-        static readonly string[] Effects =
-        [
-            "steering, G tolerance, missile evasion",
-            "gun spread",
-            "radar scan/lock speed (missiles away sooner)",
-            "target acquisition, countermeasure timing",
-            "IADS reaction (crewed HQ / AWACS / EWR)",
-        ];
-
-        void Draw(int id)
-        {
-            var btn = BDArmorySetup.ButtonStyle; var sel = BDArmorySetup.SelectedButtonStyle;
-            float w = rect.width - 16, y = 22;
-            AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), "Level 2 = stock BDArmory. Train or fight to improve. Drones fly at level 2.", AvionicsDraw.LabelSmall, AvionicsDraw.ScopeText);
-            y += 18;
-
-            var roster = HighLogic.CurrentGame?.CrewRoster;
-            if (roster == null) { GUI.DragWindow(); return; }
-            var list = new List<ProtoCrewMember>();
-            foreach (var pcm in roster.Crew) if (pcm.rosterStatus != ProtoCrewMember.RosterStatus.Dead && pcm.rosterStatus != ProtoCrewMember.RosterStatus.Missing) list.Add(pcm);
-
-            float listH = 230;
-            scroll = GUI.BeginScrollView(new Rect(8, y, w, listH), scroll, new Rect(0, 0, w - 18, list.Count * 22));
-            for (int i = 0; i < list.Count; i++)
-            {
-                var pcm = list[i];
-                var o = CombatOperators.Get(pcm.name);
-                string status = o.training >= 0 ? $"training {Names[o.training]}" : pcm.rosterStatus == ProtoCrewMember.RosterStatus.Assigned ? "on a craft" : "ready";
-                if (GUI.Button(new Rect(0, i * 22, w - 20, 20), $"{pcm.name}  {o.Short}  · {status}", selected == pcm.name ? sel : btn)) selected = pcm.name;
-            }
-            GUI.EndScrollView();
-            y += listH + 8;
-
-            var cur = selected != null ? roster[selected] : null;
-            if (cur != null)
-            {
-                var o = CombatOperators.Get(cur.name);
-                AvionicsDraw.ColorLabel(new Rect(8, y, w, 18), $"{cur.name} ({cur.trait})  courage {cur.courage:P0}  stupidity {cur.stupidity:P0}", AvionicsDraw.Header, AvionicsDraw.HudText); y += 20;
-                AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), $"Sorties {o.sorties} · kills {o.kills}", AvionicsDraw.LabelSmall, AvionicsDraw.ScopeText); y += 18;
-                if (o.training >= 0)
-                {
-                    double left = o.trainingEndUT - Planetarium.GetUniversalTime();
-                    AvionicsDraw.ColorLabel(new Rect(8, y, w, 16), $"Training {Names[o.training]}: {KSPUtil.PrintTimeCompact(Math.Max(0, left), false)} left", AvionicsDraw.Label, AvionicsDraw.Friendly);
-                    y += 20;
-                }
-                for (int i = 0; i < 5; i++)
-                {
-                    var d = (Discipline)i;
-                    int lvl = o[d];
-                    string xpText = lvl >= Operator.MaxLevel ? "max" : $"{o.xp[i]:F0}/{Operator.XpForNext(lvl):F0} xp";
-                    AvionicsDraw.ColorLabel(new Rect(8, y, 200, 16), $"{Names[i]}  {lvl}/5  ({xpText})", AvionicsDraw.Label, lvl > Operator.Baseline ? AvionicsDraw.Friendly : lvl < Operator.Baseline ? AvionicsDraw.Unknown : AvionicsDraw.HudText);
-                    AvionicsDraw.ColorLabel(new Rect(8, y + 15, 260, 14), Effects[i], AvionicsDraw.LabelSmall, AvionicsDraw.ScopeText);
-                    bool can = o.training < 0 && lvl < Operator.MaxLevel;
-                    GUI.enabled = can;
-                    string cost = CombatOperators.CareerFunds ? $", {CombatOperators.TrainingCost(o, d) / 1000f:F0}k" : "";
-                    if (GUI.Button(new Rect(w - 190, y + 2, 190, 22), $"Train ({CombatOperators.TrainingDays(o, d, cur):F0} d{cost})", btn))
-                        message = CombatOperators.StartTraining(cur, d) ?? $"{cur.name} started {Names[i]} training";
-                    GUI.enabled = true;
-                    y += 34;
-                }
-            }
-            if (!string.IsNullOrEmpty(message)) AvionicsDraw.ColorLabel(new Rect(8, rect.height - 22, w, 16), message, AvionicsDraw.Label, AvionicsDraw.Unknown);
-            GUI.DragWindow(new Rect(0, 0, rect.width, 20));
         }
     }
 }

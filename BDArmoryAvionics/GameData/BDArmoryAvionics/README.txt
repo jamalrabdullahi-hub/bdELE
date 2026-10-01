@@ -13,6 +13,25 @@ Level 2 = stock BDArmory; drones count as 2. New hires start at 1, the original 
 Train: days of game time (longer for dimmer kerbals), funds in career; the kerbal is unavailable meanwhile.
 Combat XP: time in guard-mode combat, kills credited to the craft's target, recovered sorties.
 The best qualified crew member aboard sets each skill. Toggle: "Combat operators" in the menu.
+Panel tabs: Roster (training, squadron, service record), Squadrons, Records (leaderboard incl. KIA), Battles (AARs).
+
+Ranks: Cadet > 2nd Lt > 1st Lt > Captain > Major > Lt Colonel > Colonel > Brigadier General, from merit
+(sorties, battles, kills, medals, skill levels). Never demoted.
+Squadrons: create in the Squadrons tab, assign kerbals there or from the Roster tab. The commander (assigned,
+or the senior member) lifts every member one level (not Command) while flying a combat craft in the same battle.
+Medals: Ace / Double / Triple Ace (5/10/15 air kills), Ace in a Day (5 in one battle), Strike Medal (5 surface kills),
+Gunfighter (5 gun kills), Missileer (10 missile kills), Survivor (shot down and lived), Veteran (10 battles), Master Operator.
+
+Kill log and after-action report
+--------------------------------
+Every BDArmory hit (guns, rockets, missiles, nukes, fire, rams) is credited to the craft that caused it. A craft is
+killed when it is destroyed, loses its weapons manager or command parts, or its crew bail out / die; the last
+hostile damage in the previous 30 s gets the kill (or whoever was targeting it, for a manoeuvre kill).
+Kills are classed A-A, A-G, A-S (ships), G-A, G-G... (A air, G ground, S sea, O space), manned / unmanned,
+and by weapon, in every crew member's service record. Friendly fire and unattributed losses are logged too.
+A battle starts at the first hit and ends 45 s after the last; the after-action report (teams, kills, losses,
+MVP, each unit's hits / damage / result, timeline) opens in flight, is kept with the save (last 25, Battles tab)
+and written to PluginData/AAR/*.txt. Menu: "After-action rpt" (live during a battle), "AAR at battle end".
 
 Requires: BDArmory, Harmony (000_Harmony), ModuleManager.
 Optional: SCANsat (scanned-coverage maps).
