@@ -146,19 +146,20 @@ namespace BDArmory.Avionics
         static void Plan(Faction f, CommanderSettings cs)
         {
             if (!cs.Strikes) return;
+            if (BaseLogistics.AutoStock(f) > 0) Log($"{f.name}: bases stocked with aircraft from the craft files");
             if (SC.flights.Exists(x => x.faction == f.name && (x.mission == FlightMission.Strike || x.mission == FlightMission.SEAD) && x.state != FlightState.Done)) return; // one strike package at a time
             Base from = null; InvItem item = null;
             foreach (var b in SC.bases)
             {
                 if (b.faction != f.name || b.status == BaseStatus.Destroyed || !b.RunwayOpen) continue;
-                var i = b.inventory.Find(x => (x.role == "Strike" || x.role == "SEAD") && x.available > 0 && !string.IsNullOrEmpty(x.path));
+                var i = b.inventory.Find(x => (x.Can("Strike") || x.Can("SEAD")) && x.available > 0 && !string.IsNullOrEmpty(x.path));
                 if (i != null) { from = b; item = i; break; }
             }
-            if (from == null) { Debug.Log($"[BDArmoryAvionics]: {f.name} commander: no strike aircraft ready"); return; }
+            if (from == null) { Log($"{f.name}: no strike aircraft ready (station Strike/SEAD/Multirole craft at an operational base with an open runway)"); return; }
             var target = NearestEnemyBase(f, from);
             if (target == null) return;
             int n = Mathf.Min(2, item.available);
-            var fl = Launch(f, from, item, n, item.role == "SEAD" ? FlightMission.SEAD : FlightMission.Strike, target.lat, target.lon);
+            var fl = Launch(f, from, item, n, item.role == "SEAD" || (item.role == "Multirole" && UnityEngine.Random.value < 0.3f) ? FlightMission.SEAD : FlightMission.Strike, target.lat, target.lon);
             fl.targetBase = target.site;
             Log($"{f.name}: {fl.Callsign} ({n}x {item.craft}) launched from {BaseLogistics.Name(from)} to strike {BaseLogistics.Name(target)}");
         }
@@ -181,7 +182,9 @@ namespace BDArmory.Avionics
                     if (d < bd) { bd = d; threat = v; }
                 }
                 if (threat == null) continue;
-                var item = b.inventory.Find(x => x.role == "Fighter" && x.available > 0 && !string.IsNullOrEmpty(x.path));
+                if (b.inventory.Count == 0) BaseLogistics.AutoStock(f);
+                var item = b.inventory.Find(x => x.role == "Fighter" && x.available > 0 && !string.IsNullOrEmpty(x.path))
+                        ?? b.inventory.Find(x => x.Can("Fighter") && x.available > 0 && !string.IsNullOrEmpty(x.path));
                 if (item == null) continue;
                 int n = Mathf.Min(2, item.available);
                 var fl = Launch(f, b, item, n, FlightMission.Intercept, threat.latitude, threat.longitude);

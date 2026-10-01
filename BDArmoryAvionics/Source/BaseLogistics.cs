@@ -17,7 +17,8 @@ namespace BDArmory.Avionics
         public string craft = "", path = "";
         public int authorized = 2, available = 2, lost;
         public string role = "Fighter"; // Fighter, Strike, SEAD - what the AI commander uses it for
-        public static readonly string[] Roles = ["Fighter", "Strike", "SEAD"];
+        public static readonly string[] Roles = ["Fighter", "Strike", "SEAD", "Multirole"];
+        public bool Can(string mission) => role == "Multirole" || role == mission;
     }
 
     /// <summary>
@@ -269,6 +270,85 @@ namespace BDArmory.Avionics
         }
 
         // ---- Theatre window: base detail ----
+
+        /// <summary>
+        /// Craft an AI faction can fly: weapon manager + pilot AI, not a transport (8+ seats). Role from the weapons:
+        /// air-to-air and ground attack = Multirole, anti-radiation only = SEAD, ground attack = Strike, else Fighter.
+        /// </summary>
+        public static List<(string name, string path, string role)> ClassifyCraft()
+        {
+            var list = new List<(string, string, string)>();
+            string[] aa = ["aim", "r73", "r77", "r27", "meteor", "amraam", "sidewinder", "python", "mica", "iris", "hhq", "phoenix", "sparrow"];
+            string[] ag = ["bomb", "mk8", "jdam", "gbu", "cbu", "agm", "harm", "tow", "hellfire", "maverick", "cruise", "rbs", "kh", "rocket", "hydra", "jsow", "torpedo"];
+            string[] arm = ["harm", "antirad", "kh31", "alarm"];
+            foreach (var (name, path) in CraftFiles())
+            {
+                bool wm = false, ai = false, hasAA = false, hasAG = false, hasARM = false;
+                string part = "";
+                try
+                {
+                    foreach (var raw in File.ReadLines(path))
+                    {
+                        var l = raw.Trim();
+                        if (l.StartsWith("part = ")) part = l.Substring(7).ToLowerInvariant();
+                        else if (l == "name = MissileFire") wm = true;
+                        else if (l == "name = BDModulePilotAI") ai = true;
+                        else if (l == "name = MissileLauncher" || l == "name = BDModularGuidance")
+                        {
+                            bool isAA = false; foreach (var k in aa) if (part.Contains(k)) isAA = true;
+                            bool isAG = false; foreach (var k in ag) if (part.Contains(k)) isAG = true;
+                            foreach (var k in arm) if (part.Contains(k)) hasARM = true;
+                            hasAA |= isAA; hasAG |= isAG && !isAA;
+                        }
+                    }
+                }
+                catch { continue; }
+                if (!wm || !ai) continue;
+                // seats: from the part prefabs
+                int capacity = 0;
+                try
+                {
+                    foreach (var raw in File.ReadLines(path))
+                    {
+                        var l = raw.Trim();
+                        if (!l.StartsWith("part = ")) continue;
+                        string pn = l.Substring(7); int us = pn.LastIndexOf('_'); if (us > 0) pn = pn.Substring(0, us);
+                        var ap = PartLoader.getPartInfoByName(pn);
+                        if (ap?.partPrefab != null) capacity += ap.partPrefab.CrewCapacity;
+                    }
+                }
+                catch { }
+                if (capacity >= 6) { Debug.Log($"[BDArmoryAvionics]: auto-stock: {name} skipped (transport, {capacity} seats)"); continue; }
+                string role = hasAA && hasAG ? "Multirole" : hasARM && !hasAG ? "SEAD" : hasAG ? "Strike" : "Fighter";
+                list.Add((name, path, role));
+            }
+            // one entry per craft name
+            var seen = new HashSet<string>(); var outList = new List<(string, string, string)>();
+            foreach (var c in list) if (seen.Add(c.Item1)) outList.Add(c);
+            return outList;
+        }
+
+        /// <summary>Give an AI faction's empty bases their aircraft (2 of each suitable craft).</summary>
+        public static int AutoStock(Faction f, bool force = false)
+        {
+            var sc = FactionsScenario.Instance;
+            if (sc == null || f == null) return 0;
+            craftFiles = null; // re-read the Ships folder
+            var craft = ClassifyCraft();
+            int added = 0;
+            foreach (var b in sc.bases)
+            {
+                if (b.faction != f.name || (!force && b.inventory.Count > 0)) continue;
+                foreach (var (name, path, role) in craft)
+                {
+                    if (b.inventory.Exists(i => i.craft == name)) continue;
+                    b.inventory.Add(new InvItem { craft = name, path = path, role = role, authorized = 2, available = 2 });
+                    added++;
+                }
+                if (added > 0) Debug.Log($"[BDArmoryAvionics]: auto-stock {b.site} ({f.name}): {string.Join(", ", b.inventory.ConvertAll(i => $"{i.craft} [{i.role}]"))}");
+            }
+            return added;
+        }
 
         static List<(string name, string path)> craftFiles;
         static int craftIdx;

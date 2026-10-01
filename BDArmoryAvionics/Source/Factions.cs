@@ -464,8 +464,9 @@ namespace BDArmory.Avionics
                 int li = Array.IndexOf(CommanderSettings.Levels, cs.aggression);
                 if (GUI.Button(new Rect(x + 180, y, 110, 20), cs.aggression, btn)) cs.aggression = CommanderSettings.Levels[(li + 1) % CommanderSettings.Levels.Length];
                 if (GUI.Button(new Rect(x + 296, y, 90, 20), "Plan now", btn)) cs.nextPlanUT = Planetarium.GetUniversalTime();
+                if (GUI.Button(new Rect(w - 100, y, 100, 20), "Re-stock", btn)) { int n = BaseLogistics.AutoStock(f, true); AICommander.Log($"{f.name}: {n} aircraft types added from the craft files"); }
                 double next = cs.nextPlanUT - Planetarium.GetUniversalTime();
-                AvionicsDraw.ColorLabel(new Rect(x + 392, y + 3, w - 392, 16), cs.aggression == "Passive" ? "inactive" : $"next plan {KSPUtil.PrintTimeCompact(Math.Max(0, next), false)}", small, AvionicsDraw.ScopeText);
+                AvionicsDraw.ColorLabel(new Rect(x + 392, y + 3, w - 500, 16), cs.aggression == "Passive" ? "inactive" : $"next plan {KSPUtil.PrintTimeCompact(Math.Max(0, next), false)}", small, AvionicsDraw.ScopeText);
                 y += 24;
             }
             AICommander.RevealFlights = GUI.Toggle(new Rect(x, y, 200, 20), AICommander.RevealFlights, "Reveal AI flights on C2 map", AICommander.RevealFlights ? sel : btn);
