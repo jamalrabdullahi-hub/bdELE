@@ -63,6 +63,10 @@ namespace BDArmory.Avionics
             if (o.Stat("kill.Missile") >= 10) yield return "Missileer";
             if (o.Stat("survived") >= 1) yield return "Survivor (shot down, lived)";
             if (o.Stat("battles") >= 10) yield return "Veteran (10 battles)";
+            if (o.Stat("rescues") >= 1) yield return "Rescue Medal";
+            if (o.Stat("rescues") >= 5) yield return "Angel (5 rescues)";
+            if (o.Stat("rescued") >= 1) yield return "Evader (rescued behind the lines)";
+            if (o.Stat("pow") >= 1) yield return "Prisoner of War Medal";
             bool master = true; foreach (var l in o.level) if (l < Operator.MaxLevel) master = false;
             if (master) yield return "Master Operator";
         }

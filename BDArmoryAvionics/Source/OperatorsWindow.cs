@@ -155,6 +155,7 @@ namespace BDArmory.Avionics
             L(x, y, w, $"Kills {o.kills}:  A-A {o.Stat("kill.A-A")} · A-G {surface} · G-A {o.Stat("kill.G-A") + o.Stat("kill.S-A")} · G-G {o.Stat("kill.G-G") + o.Stat("kill.G-S") + o.Stat("kill.S-G") + o.Stat("kill.S-S")} · space {o.Stat("kill.vs.Space")}", AvionicsDraw.HudText); y += 16;
             L(x, y, w, $"Targets: manned {o.Stat("kill.manned")} · unmanned {o.Stat("kill.unmanned")}     Weapons: gun {o.Stat("kill.Gun")} · missile {o.Stat("kill.Missile")} · rocket {o.Stat("kill.Rocket")} · ram {o.Stat("kill.Ram")} · manoeuvre {o.Stat("kill.Manoeuvre")}", AvionicsDraw.ScopeText, s); y += 14;
             L(x, y, w, $"Battles {o.Stat("battles")} · sorties {o.sorties} · shot down {o.Stat("losses")} · survived {o.Stat("survived")} · friendly fire {o.Stat("ff")}{(o.kia ? " · KILLED IN ACTION" : "")}", o.kia ? AvionicsDraw.Hostile : AvionicsDraw.ScopeText, s); y += 14;
+            L(x, y, w, $"Ejections {o.Stat("ejections")} · rescued {o.Stat("rescued")} · POW {o.Stat("pow")} · freed {o.Stat("freed")} · rescues made {o.Stat("rescues")}", AvionicsDraw.ScopeText, s); y += 14;
             L(x, y, w, o.medals.Count == 0 ? "Medals: none yet" : $"Medals: {string.Join(", ", o.medals)}", o.medals.Count > 0 ? AvionicsDraw.LockBox : AvionicsDraw.ScopeText, s); y += 14;
             return y;
         }

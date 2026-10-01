@@ -249,6 +249,18 @@ namespace BDArmory.Avionics
                         labels.Add((bp + new Vector2(12, 2), fb.site == "Runway" ? "KSC" : fb.site, bc));
                     }
 
+                // Downed pilots of our side
+                foreach (var sv in CSARScenario.ActiveFor(net.team))
+                {
+                    if (sv.status != SurvivorStatus.Down) continue;
+                    var sp = ToMap(m, body, sv.lat, sv.lon);
+                    if (!In(m, sp)) continue;
+                    AvionicsDraw.Circle(sp, 8, 2f, AvionicsDraw.Hostile, 16);
+                    AvionicsDraw.Line(sp + new Vector2(-5, 0), sp + new Vector2(5, 0), 2f, AvionicsDraw.Hostile);
+                    AvionicsDraw.Line(sp + new Vector2(0, -5), sp + new Vector2(0, 5), 2f, AvionicsDraw.Hostile);
+                    labels.Add((sp + new Vector2(10, -7), $"CSAR {sv.kerbal.Split(' ')[0]}", AvionicsDraw.Hostile));
+                }
+
                 // AI sorties (virtual) the player's side can see
                 if (FactionsScenario.Instance != null)
                     foreach (var fl in FactionsScenario.Instance.flights)

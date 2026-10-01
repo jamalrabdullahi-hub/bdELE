@@ -219,10 +219,23 @@ namespace BDArmory.Avionics
             return y + 22;
         }
 
-        /// <summary>Munitions waiting for strike approval, at the top of the panel.</summary>
+        /// <summary>Downed pilots (CSAR) and munitions waiting for strike approval, at the top of the panel.</summary>
         static float DrawApprovals(Rect r, TeamNetwork net)
         {
             float x = r.x, y = r.y, w = r.width;
+            foreach (var s in CSARScenario.ActiveFor(net.team))
+            {
+                AvionicsDraw.FilledRect(new Rect(x, y, w, 40), new Color(0.35f, 0.08f, 0.08f, 0.85f));
+                AvionicsDraw.ColorLabel(new Rect(x + 4, y + 2, w - 8, 14), $"CSAR {CSARScenario.Summary(s)}", AvionicsDraw.LabelSmall, s.status == SurvivorStatus.PickedUp ? AvionicsDraw.Friendly : AvionicsDraw.Hostile);
+                float b = (w - 12) / 2;
+                var wmA = BDArmorySetup.Instance?.ActiveWeaponManager;
+                if (Button(new Rect(x + 4, y + 18, b, 19), "GPS target"))
+                    if (wmA != null) foreach (var g in BDArmory.UI.BDATargetManager.GPSTargetList(wmA.Team)) if (g.name == s.gpsName) { wmA.designatedGPSInfo = g; break; }
+                GUI.enabled = SelectedUnit != null && s.status == SurvivorStatus.Down;
+                if (Button(new Rect(x + 8 + b, y + 18, b, 19), SelectedUnit != null ? $"Send {SelectedUnit.GetName()}" : "Send (select a unit)")) CSARScenario.Send(SelectedUnit, s);
+                GUI.enabled = true;
+                y += 44;
+            }
             foreach (var m in LoiteringMunitions.Flying(net.team))
             {
                 if (m.state != LMState.Pending || m.target == null) continue;

@@ -192,6 +192,7 @@ namespace BDArmory.Avionics
                         ScreenMessages.PostScreenMessage($"{Name(b)} CAPTURED by {af.name}", 6f, ScreenMessageStyle.UPPER_CENTER);
                         CombatLog.Note($"{Name(b)} captured by {af.name} from {old}", true, 1);
                         Debug.Log($"[BDArmoryAvionics]: base {b.site} captured by {af.name} from {old}");
+                        CSARScenario.OnBaseCaptured(b, af);
                     }
                 }
                 else if (b.captureProgress > 0) { b.captureProgress = Mathf.Max(0, b.captureProgress - dt * 2); if (b.captureProgress == 0) b.capturer = null; }

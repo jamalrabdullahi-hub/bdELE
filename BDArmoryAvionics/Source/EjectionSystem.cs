@@ -202,6 +202,8 @@ namespace BDArmory.Avionics
                 Vector3 startPos = fromPart.transform.position + dir * EjectClearance(fromPart);
                 Vessel previousActive = FlightGlobals.ActiveVessel;
                 Vessel fromVessel = fromPart.vessel;
+                var ejectTeam = fromVessel.ActiveController().WM?.Team; // read now: an auto-ejecting cockpit may be gone in a moment
+                string ejectFrom = fromVessel.GetName();
 
                 KerbalEVA eva = FlightEVA.fetch.spawnEVA(crew, fromPart, fromPart.airlock, true);
                 if (eva == null || eva.vessel == null)
@@ -219,6 +221,7 @@ namespace BDArmory.Avionics
                 eva.autoGrabLadderOnStart = false;
                 eva.StartNonCollidePeriod(5f, 1f, fromPart, fromPart.airlock);
                 EnsureParachute(eva);
+                try { CSARScenario.ReportEjection(eva.vessel, crew, ejectTeam, ejectFrom); } catch (System.Exception e) { Debug.LogWarning($"[BDArmoryAvionics]: CSAR report failed: {e.Message}"); }
 
                 // KSP puts a kerbal leaving a hatch onto the nearest ladder/rail, where forces barely move it.
                 // Step 1 (what pressing F does): let go. KSP ignores "let go" until the grab has finished,

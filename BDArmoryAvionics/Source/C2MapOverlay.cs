@@ -119,6 +119,13 @@ namespace BDArmory.Avionics
                         var bc = fac != null ? fac.colour : AvionicsDraw.Neutral;
                         AvionicsDraw.Box(bp, 9, 2.5f, bc); AvionicsDraw.Box(bp, 4, 2f, bc);
                     }
+                foreach (var sv in CSARScenario.ActiveFor(net.team))
+                    if (sv.status == SurvivorStatus.Down && ToScreen(body.GetWorldSurfacePosition(sv.lat, sv.lon, System.Math.Max(0, sv.alt)), out var svp))
+                    {
+                        AvionicsDraw.Circle(svp, 8, 2f, AvionicsDraw.Hostile, 16);
+                        AvionicsDraw.Line(svp + new Vector2(-5, 0), svp + new Vector2(5, 0), 2f, AvionicsDraw.Hostile);
+                        AvionicsDraw.Line(svp + new Vector2(0, -5), svp + new Vector2(0, 5), 2f, AvionicsDraw.Hostile);
+                    }
                 foreach (var (p, n) in nodeScreen) C2UI.NodeSymbol(p, n, C2UI.SelectedUnit == n.vessel);
                 foreach (var (p, lm) in lmScreen)
                 {

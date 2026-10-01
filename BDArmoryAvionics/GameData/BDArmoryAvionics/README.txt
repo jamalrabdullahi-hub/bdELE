@@ -88,6 +88,19 @@ Baikerbanur). Bases tab: click a site's owner button to cycle owner; click an ow
   away from you a strike is resolved by numbers (base defences = stationed Fighters). Losses come out of the
   inventory, survivors return. Detected sorties (your radar or 30 km of a unit) show on the C2 map as diamonds.
 
+Combat search and rescue (CSAR)
+-------------------------------
+Ejecting (P-P or auto-eject) from a combat craft reports the pilot to C2: a GPS point on their team named
+"CSAR <rank> <name> (<aircraft>)", moved to where they land. The C2 panel lists downed pilots at the top
+(time down, capture countdown) with "GPS target" and "Send <selected unit>"; the C2 map marks them with a red cross.
+- Territory: nearer an enemy base than a friendly one = enemy territory. An enemy search team arrives after
+  1 h + 1 h per 100 km from that base (game time, also while warping). Friendly aircraft within 3 km hold it off
+  30 min at a time. Armed enemy ground units within 150 m for 15 s capture the pilot on the spot.
+- Pick up: the pilot boards any friendly craft (walk to the hatch, winch, or land / hover below 20 m within 60 m
+  with a free seat and they climb in). Rescued when that craft stops at a friendly base or is recovered.
+- Captured pilots are POWs (missing, unavailable) held at the nearest enemy base; capturing that base frees them.
+- Records: ejections, rescued, POW, freed, rescues made; medals Rescue Medal, Angel (5 rescues), Evader, POW Medal.
+
 Kill log and after-action report
 --------------------------------
 Every BDArmory hit (guns, rockets, missiles, nukes, fire, rams) is credited to the craft that caused it. A craft is
