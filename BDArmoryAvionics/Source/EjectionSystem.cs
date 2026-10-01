@@ -226,7 +226,7 @@ namespace BDArmory.Avionics
                 var wait = new WaitForFixedUpdate();
                 yield return wait;
                 if (eva == null || eva.vessel == null) yield break;
-                string grabbed = StateName(eva);
+                string grabbed = StateName(eva);                bool wasJointed = AnchorJoint(eva) != null || eva.IsLadderJointed;
                 float releaseStart = Time.time;
                 while (eva != null && eva.vessel != null && OnLadder(eva) && Time.time - releaseStart < MaxReleaseWait)
                 {
@@ -234,7 +234,7 @@ namespace BDArmory.Avionics
                     yield return wait;
                 }
                 if (eva == null || eva.vessel == null) yield break;
-                Debug.Log($"[BDArmoryAvionics]: Eject {crew.name}: spawned in '{grabbed}', {(OnLadder(eva) ? "STILL HOLDING" : "free")} after {Time.time - releaseStart:F2} s, now '{StateName(eva)}'");
+                Debug.Log($"[BDArmoryAvionics]: Eject {crew.name}: spawned in '{grabbed}'{(wasJointed ? " (jointed to the moving craft)" : "")}, {(OnLadder(eva) ? "STILL HOLDING" : "free")} after {Time.time - releaseStart:F2} s, now '{StateName(eva)}'");
 
                 // Step 2: place the kerbal clear of the canopy, moving with the craft, then fire the seat rocket.
                 if (fromPart != null && fromPart.vessel != null)
@@ -324,14 +324,27 @@ namespace BDArmory.Avionics
         static readonly System.Reflection.FieldInfo onLadderField = HarmonyLib.AccessTools.Field(typeof(KerbalEVA), "onLadder"); // private in KSP
         static readonly System.Reflection.FieldInfo ladderTriggersField = HarmonyLib.AccessTools.Field(typeof(KerbalEVA), "currentLadderTriggers"); // private in KSP
 
+        // When the craft is moving, KSP physically joints a kerbal on a ladder to it (anchorJoint) so it isn't left behind.
+        // Static craft have no joint, which is why ejecting on the ground was fine and ejecting in flight wasn't.
+        static readonly System.Reflection.FieldInfo anchorJointField = HarmonyLib.AccessTools.Field(typeof(KerbalEVA), "anchorJoint");
+        static readonly System.Reflection.FieldInfo ladderJointedField = HarmonyLib.AccessTools.Field(typeof(KerbalEVA), "isLadderJointed");
+        static readonly System.Reflection.FieldInfo currentLadderField = HarmonyLib.AccessTools.Field(typeof(KerbalEVA), "currentLadder");
+        static readonly System.Reflection.PropertyInfo currentLadderPartProp = HarmonyLib.AccessTools.Property(typeof(KerbalEVA), "currentLadderPart");
+
+        static FixedJoint AnchorJoint(KerbalEVA eva) => anchorJointField?.GetValue(eva) as FixedJoint;
+
         static bool OnLadder(KerbalEVA eva)
         {
             if (onLadderField != null && onLadderField.GetValue(eva) is bool b && b) return true;
+            if (eva.IsLadderJointed || AnchorJoint(eva) != null) return true;
             var state = eva.fsm != null ? eva.fsm.CurrentState : null;
             return state != null && state.name != null && state.name.StartsWith("Ladder");
         }
 
-        /// <summary>Release any ladder or rail the kerbal is holding (let go, or push off if letting go isn't allowed from that state).</summary>
+        /// <summary>
+        /// Release any ladder or rail the kerbal is holding: let go (F), else push off (Space); then break the
+        /// joint that holds it to a moving craft, and as a last resort put it straight into the floating state.
+        /// </summary>
         static void LetGo(KerbalEVA eva)
         {
             if (eva == null || eva.fsm == null) return;
@@ -339,14 +352,30 @@ namespace BDArmory.Avionics
             if (!OnLadder(eva)) return;
             try
             {
-                // A grab that's still in progress can't be let go of; finish it first, then let go (F), else push off (Space).
+                // A grab that's still in progress can't be let go of; finish it first.
                 if (eva.fsm.CurrentState == eva.st_ladder_acquire) eva.fsm.RunEvent(eva.On_ladderGrabComplete);
                 eva.fsm.RunEvent(eva.On_ladderLetGo);
                 if (OnLadder(eva)) eva.fsm.RunEvent(eva.On_LadderPushOff);
+
+                // Moving craft: the ladder joint can outlive the ladder state. Remove it.
+                var joint = AnchorJoint(eva);
+                if (joint != null)
+                {
+                    DestroyImmediate(joint);
+                    anchorJointField.SetValue(eva, null);
+                }
+                ladderJointedField?.SetValue(eva, false);
+                onLadderField?.SetValue(eva, false);
+                currentLadderField?.SetValue(eva, null);
+                if (currentLadderPartProp != null && currentLadderPartProp.CanWrite) currentLadderPartProp.SetValue(eva, null);
+
+                var state = eva.fsm.CurrentState;
+                if (state != null && state.name != null && state.name.StartsWith("Ladder"))
+                    eva.fsm.StartFSM(eva.st_idle_fl); // last resort: floating, hands free
             }
             catch (System.Exception e)
             {
-                Debug.LogWarning($"[BDArmory.EjectionSystem]: Couldn't release the ladder: {e.Message}");
+                Debug.LogWarning($"[BDArmoryAvionics]: Couldn't release the ladder: {e.Message}");
             }
         }
 
