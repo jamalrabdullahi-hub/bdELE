@@ -1,0 +1,183 @@
+using System.Collections;
+using KSP.UI.Screens;
+using UnityEngine;
+
+using BDArmory.Settings;
+using BDArmory.Targeting;
+using BDArmory.UI;
+using BDArmory.Utils;
+
+namespace BDArmory.Avionics
+{
+    /// <summary>
+    /// Flight-scene entry point for the avionics windows: toolbar button, menu, hotkeys, contact refresh and drawing.
+    /// </summary>
+    [KSPAddon(KSPAddon.Startup.Flight, false)]
+    public class AvionicsCore : MonoBehaviour
+    {
+        public static AvionicsCore Instance;
+        const int MenuWindowID = 71730300;
+
+        ApplicationLauncherButton toolbarButton;
+        bool showMenu = false;
+        Rect menuRect;
+        const string KeyLockID = "BDAAvionicsTextInput";
+        bool keyboardLocked = false;
+        int radarRectIndex = -1, listRectIndex = -1, gpsRectIndex = -1, menuRectIndex = -1;
+
+        void Awake()
+        {
+            if (Instance != null) { Destroy(this); return; }
+            Instance = this;
+            AvionicsSettings.Load();
+        }
+
+        void Start()
+        {
+            menuRect = new Rect(Screen.width - 300, 90, 240, 168);
+            radarRectIndex = GUIUtils.RegisterGUIRect(new Rect());
+            listRectIndex = GUIUtils.RegisterGUIRect(new Rect());
+            gpsRectIndex = GUIUtils.RegisterGUIRect(new Rect());
+            menuRectIndex = GUIUtils.RegisterGUIRect(new Rect());
+            StartCoroutine(AddToolbarButton());
+        }
+
+        IEnumerator AddToolbarButton()
+        {
+            float giveUp = Time.realtimeSinceStartup + 15;
+            yield return new WaitUntil(() => ApplicationLauncher.Ready && (BDArmorySetup.toolbarButtonAdded || Time.realtimeSinceStartup > giveUp));
+            if (toolbarButton != null) yield break;
+            toolbarButton = ApplicationLauncher.Instance.AddModApplication(
+                () => showMenu = true, () => showMenu = false, null, null, null, null,
+                ApplicationLauncher.AppScenes.FLIGHT | ApplicationLauncher.AppScenes.MAPVIEW,
+                AvionicsDraw.IconTexture);
+        }
+
+        void OnDestroy()
+        {
+            AvionicsSettings.Save();
+            if (toolbarButton != null && ApplicationLauncher.Instance != null)
+                ApplicationLauncher.Instance.RemoveModApplication(toolbarButton);
+            foreach (var i in new[] { radarRectIndex, listRectIndex, gpsRectIndex, menuRectIndex })
+                if (i >= 0) GUIUtils.SetGUIRectVisible(i, false);
+            GPSMarkers.DropArmed = false;
+            if (keyboardLocked) InputLockManager.RemoveControlLock(KeyLockID);
+            if (Instance == this) Instance = null;
+        }
+
+        void Update()
+        {
+            if (!HighLogic.LoadedSceneIsFlight) return;
+            if (!Input.GetMouseButton(0)) { Radar3DWindow.CancelDrag(); TargetListWindow.CancelResize(); }
+
+            // Stop typed GPS names from also triggering KSP controls
+            bool lockKeys = AvionicsSettings.ShowGPSManager && BDArmorySetup.GAME_UI_ENABLED && GPSManagerWindow.TextFocused;
+            if (lockKeys != keyboardLocked)
+            {
+                if (lockKeys) InputLockManager.SetControlLock(ControlTypes.KEYBOARDINPUT, KeyLockID);
+                else InputLockManager.RemoveControlLock(KeyLockID);
+                keyboardLocked = lockKeys;
+            }
+
+            if (GPSMarkers.TryDrop()) return;
+            if (GUIUtility.keyboardControl != 0) return; // typing in a text field
+
+            if (KeyDown(AvionicsSettings.KeyNextTarget)) AvionicsContacts.Cycle(1);
+            if (KeyDown(AvionicsSettings.KeyPrevTarget)) AvionicsContacts.Cycle(-1);
+            if (KeyDown(AvionicsSettings.KeyLockTarget)) AvionicsContacts.Lock(AvionicsContacts.Selected);
+            if (KeyDown(AvionicsSettings.KeySlewCamera)) AvionicsContacts.SlewCamera(AvionicsContacts.Selected);
+        }
+
+        static bool KeyDown(KeyCode k) => k != KeyCode.None && Input.GetKeyDown(k);
+
+        void LateUpdate()
+        {
+            if (!HighLogic.LoadedSceneIsFlight) return;
+            AvionicsContacts.Refresh();
+
+            UpdateRect(radarRectIndex, AvionicsSettings.Radar3DRect, AvionicsSettings.ShowRadar3D);
+            UpdateRect(listRectIndex, AvionicsSettings.TargetListRect, AvionicsSettings.ShowTargetList);
+            UpdateRect(gpsRectIndex, AvionicsSettings.GPSManagerRect, AvionicsSettings.ShowGPSManager);
+            UpdateRect(menuRectIndex, menuRect, showMenu);
+        }
+
+        static void UpdateRect(int index, Rect r, bool visible)
+        {
+            if (index < 0) return;
+            bool show = visible && BDArmorySetup.GAME_UI_ENABLED;
+            if (GUIUtils.extraGUIRects == null || !GUIUtils.extraGUIRects.TryGetValue(index, out var e)) return;
+            if (e.rect != r) GUIUtils.UpdateGUIRect(r, index);
+            if (e.visible != show) GUIUtils.SetGUIRectVisible(index, show);
+        }
+
+        public static bool MouseOverAnyWindow()
+        {
+            Vector2 m = new(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
+            if (m.y < 65) return true;
+            if (AvionicsSettings.ShowRadar3D && GUIUtils.MouseIsInRect(AvionicsSettings.Radar3DRect, m)) return true;
+            if (AvionicsSettings.ShowTargetList && GUIUtils.MouseIsInRect(AvionicsSettings.TargetListRect, m)) return true;
+            if (AvionicsSettings.ShowGPSManager && GUIUtils.MouseIsInRect(AvionicsSettings.GPSManagerRect, m)) return true;
+            if (Instance != null && Instance.showMenu && GUIUtils.MouseIsInRect(Instance.menuRect, m)) return true;
+            if (BDArmorySetup.windowBDAToolBarEnabled && GUIUtils.MouseIsInRect(BDArmorySetup.WindowRectToolbar, m)) return true;
+            if (ModuleTargetingCamera.windowIsOpen && GUIUtils.MouseIsInRect(BDArmorySetup.WindowRectTargetingCam, m)) return true;
+            var wm = AvionicsContacts.WM;
+            if (wm != null && wm.vesselRadarData && wm.vesselRadarData.guiEnabled && GUIUtils.MouseIsInRect(BDArmorySetup.WindowRectRadar, m)) return true;
+            return false;
+        }
+
+        void OnGUI()
+        {
+            if (!HighLogic.LoadedSceneIsFlight || !BDArmorySetup.GAME_UI_ENABLED) return;
+
+            // Markers first, so windows draw on top of them
+            if (MapView.MapIsEnabled) GPSMarkers.DrawMap();
+            else GPSMarkers.DrawFlight();
+            GPSMarkers.DrawDropHint();
+
+            var skin = BDArmorySetup.BDGuiSkin;
+            if (showMenu)
+                menuRect = DrawWindow(MenuWindowID, menuRect, MenuWindow, "BDA Avionics", skin);
+            if (AvionicsSettings.ShowRadar3D)
+                AvionicsSettings.Radar3DRect = KeepSize(DrawWindow(Radar3DWindow.WindowID, AvionicsSettings.Radar3DRect, Radar3DWindow.Draw, "3D Radar", skin), AvionicsSettings.Radar3DRect);
+            if (AvionicsSettings.ShowTargetList)
+                AvionicsSettings.TargetListRect = KeepSize(DrawWindow(TargetListWindow.WindowID, AvionicsSettings.TargetListRect, TargetListWindow.Draw, "Target List", skin), AvionicsSettings.TargetListRect);
+            if (AvionicsSettings.ShowGPSManager)
+                AvionicsSettings.GPSManagerRect = KeepSize(DrawWindow(GPSManagerWindow.WindowID, AvionicsSettings.GPSManagerRect, GPSManagerWindow.Draw, "GPS Manager", skin), AvionicsSettings.GPSManagerRect);
+        }
+
+        /// <summary>Window functions resize their own settings rect; keep that size and take only the dragged position.</summary>
+        static Rect KeepSize(Rect dragged, Rect current) => new(dragged.position, current.size);
+
+        static Rect DrawWindow(int id, Rect rect, GUI.WindowFunction func, string title, GUISkin skin)
+        {
+            var m = GUI.matrix;
+            float s = BDArmorySettings.UI_SCALE_ACTUAL;
+            if (s != 1) GUIUtility.ScaleAroundPivot(s * Vector2.one, rect.position);
+            rect = GUI.Window(id, rect, func, title, skin.window);
+            GUI.matrix = m;
+            GUIUtils.RepositionWindow(ref rect);
+            return rect;
+        }
+
+        void MenuWindow(int id)
+        {
+            if (GUI.Button(new Rect(menuRect.width - 20, 2, 18, 18), " X", BDArmorySetup.CloseButtonStyle))
+            {
+                showMenu = false;
+                if (toolbarButton != null) toolbarButton.SetFalse(false);
+                return;
+            }
+            var btn = BDArmorySetup.ButtonStyle;
+            var sel = BDArmorySetup.SelectedButtonStyle;
+            float y = 24, w = menuRect.width - 16;
+            AvionicsSettings.ShowRadar3D = GUI.Toggle(new Rect(8, y, w, 22), AvionicsSettings.ShowRadar3D, "3D Radar", AvionicsSettings.ShowRadar3D ? sel : btn); y += 24;
+            AvionicsSettings.ShowTargetList = GUI.Toggle(new Rect(8, y, w, 22), AvionicsSettings.ShowTargetList, "Target List", AvionicsSettings.ShowTargetList ? sel : btn); y += 24;
+            AvionicsSettings.ShowGPSManager = GUI.Toggle(new Rect(8, y, w, 22), AvionicsSettings.ShowGPSManager, "GPS Manager", AvionicsSettings.ShowGPSManager ? sel : btn); y += 28;
+            var small = AvionicsDraw.LabelSmall;
+            AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), "FLIR and the pod HUD are controlled from", small, AvionicsDraw.ScopeText); y += 13;
+            AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), "the bottom of the Target Camera window.", small, AvionicsDraw.ScopeText); y += 16;
+            AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), "Keys are set in PluginData/Avionics.cfg", small, AvionicsDraw.ScopeText);
+            GUIUtils.DragWindow();
+        }
+    }
+}

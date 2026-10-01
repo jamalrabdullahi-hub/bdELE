@@ -25,7 +25,7 @@ namespace BDArmory.Targeting
 
         void OnRenderImage(RenderTexture source, RenderTexture destination)
         {
-            if (!TargetingCamera.Instance.color || TargetingCamera.Instance.nvMode)
+            if (!TargetingCamera.Instance.color || TargetingCamera.Instance.nvMode || Avionics.FLIRModes.Active)
             {
                 Graphics.Blit(source, destination, grayscaleMaterial); //apply grayscale
             }

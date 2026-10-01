@@ -140,6 +140,9 @@ namespace BDArmory.Radar
         //TargetSignatureData[] contacts = new TargetSignatureData[30];
         private List<RadarDisplayData> displayedTargets;
         private List<IRSTDisplayData> displayedIRTargets;
+        // Read-only views of the current contacts, used by the avionics windows (BDArmory.Avionics).
+        public IReadOnlyList<RadarDisplayData> DisplayedTargets => displayedTargets;
+        public IReadOnlyList<IRSTDisplayData> DisplayedIRTargets => displayedIRTargets;
         public bool locked;
         private int activeLockedTargetIndex;
         private List<int> lockedTargetIndexes;

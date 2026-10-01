@@ -810,6 +810,9 @@ namespace BDArmory.Targeting
             GUI.DrawTexture(imageRect, TargetingCamera.Instance.targetCamRenderTexture, ScaleMode.StretchToFill, false);
             GUI.DrawTexture(imageRect, TargetingCamera.Instance.ReticleTexture, ScaleMode.StretchToFill, true);
 
+            // Avionics: FLIR heat glows, FLIR controls and pod HUD
+            Avionics.TGPOverlay.Draw(this, imageRect);
+
             // slew buttons
             DrawSlewButtons();
 

@@ -127,6 +127,16 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Avionics\AvionicsCore.cs" />
+    <Compile Include="Avionics\AvionicsContacts.cs" />
+    <Compile Include="Avionics\AvionicsDraw.cs" />
+    <Compile Include="Avionics\AvionicsSettings.cs" />
+    <Compile Include="Avionics\FLIRModes.cs" />
+    <Compile Include="Avionics\GPSManagerWindow.cs" />
+    <Compile Include="Avionics\GPSMarkers.cs" />
+    <Compile Include="Avionics\Radar3DWindow.cs" />
+    <Compile Include="Avionics\TargetListWindow.cs" />
+    <Compile Include="Avionics\TGPOverlay.cs" />
     <Compile Include="Ammo\BulletInfo.cs" />
     <Compile Include="Ammo\ModuleAmmoSwitch.cs" />
     <Compile Include="Ammo\ModuleCASE.cs" />
