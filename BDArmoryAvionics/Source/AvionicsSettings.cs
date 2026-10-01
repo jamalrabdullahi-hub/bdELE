@@ -52,6 +52,12 @@ namespace BDArmory.Avionics
         // Pilot AI formation keeping
         public static bool FormationAssist = true;
         public static float FormationMaxBank = 30f; // degrees of bank allowed for sideways slot corrections
+
+        // Pilot AI takeoff / landing / refuelling
+        public static bool TakeoffAssist = true;
+        public static float RotateRate = 3f;          // degrees per second of nose-up during rotation
+        public static float MaxRotateAttitude = 10f;  // degrees: nose attitude cap while the wheels are on the ground
+        public static bool AirOpsTelemetry = false;   // log formation / landing / refuelling state every 2 s for tuning
         public static bool WorldContactMarkers = false;
 
         // Target list
@@ -124,6 +130,10 @@ namespace BDArmory.Avionics
                 Radar3DShowDebris = GetBool(node, "Radar3DShowDebris", Radar3DShowDebris);
                 FormationAssist = GetBool(node, "FormationAssist", FormationAssist);
                 FormationMaxBank = Mathf.Clamp(GetFloat(node, "FormationMaxBank", FormationMaxBank), 5f, 60f);
+                TakeoffAssist = GetBool(node, "TakeoffAssist", TakeoffAssist);
+                RotateRate = Mathf.Clamp(GetFloat(node, "RotateRate", RotateRate), 0.5f, 15f);
+                MaxRotateAttitude = Mathf.Clamp(GetFloat(node, "MaxRotateAttitude", MaxRotateAttitude), 3f, 25f);
+                AirOpsTelemetry = GetBool(node, "AirOpsTelemetry", AirOpsTelemetry);
                 WorldContactMarkers = GetBool(node, "WorldContactMarkers", WorldContactMarkers);
 
                 TargetListShowFriendlies = GetBool(node, "TargetListShowFriendlies", TargetListShowFriendlies);
@@ -190,6 +200,10 @@ namespace BDArmory.Avionics
                 node.AddValue("Radar3DShowDebris", Radar3DShowDebris);
                 node.AddValue("FormationAssist", FormationAssist);
                 node.AddValue("FormationMaxBank", FormationMaxBank);
+                node.AddValue("TakeoffAssist", TakeoffAssist);
+                node.AddValue("RotateRate", RotateRate);
+                node.AddValue("MaxRotateAttitude", MaxRotateAttitude);
+                node.AddValue("AirOpsTelemetry", AirOpsTelemetry);
                 node.AddValue("WorldContactMarkers", WorldContactMarkers);
 
                 node.AddValue("TargetListShowFriendlies", TargetListShowFriendlies);

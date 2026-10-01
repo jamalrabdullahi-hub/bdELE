@@ -35,7 +35,7 @@ namespace BDArmory.Avionics
 
         void Start()
         {
-            menuRect = new Rect(Screen.width - 300, 90, 240, 466);
+            menuRect = new Rect(Screen.width - 300, 90, 240, 488);
             radarRectIndex = GUIUtils.RegisterGUIRect(new Rect());
             listRectIndex = GUIUtils.RegisterGUIRect(new Rect());
             gpsRectIndex = GUIUtils.RegisterGUIRect(new Rect());
@@ -91,6 +91,7 @@ namespace BDArmory.Avionics
         }
 
         static bool KeyDown(KeyCode k) => k != KeyCode.None && Input.GetKeyDown(k);
+        static float hw2(float w) => (w - 4) / 2; // half-width menu button
 
         void LateUpdate()
         {
@@ -181,7 +182,9 @@ namespace BDArmory.Avionics
             AvionicsSettings.AutoEjectOnDestruction = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.AutoEjectOnDestruction, "Auto-eject if cockpit destroyed", AvionicsSettings.AutoEjectOnDestruction ? sel : btn); y += 22;
             AvionicsSettings.AutoEjectBeforeImpact = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.AutoEjectBeforeImpact, "Auto-eject before ground impact", AvionicsSettings.AutoEjectBeforeImpact ? sel : btn); y += 22;
             AvionicsSettings.ThreatBanner = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.ThreatBanner, "Missile / lock warning banner", AvionicsSettings.ThreatBanner ? sel : btn); y += 22;
-            AvionicsSettings.FormationAssist = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.FormationAssist, "AI formation assist", AvionicsSettings.FormationAssist ? sel : btn); y += 26;
+            AvionicsSettings.FormationAssist = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.FormationAssist, "AI formation assist", AvionicsSettings.FormationAssist ? sel : btn); y += 22;
+            AvionicsSettings.TakeoffAssist = GUI.Toggle(new Rect(8, y, hw2(w), 20), AvionicsSettings.TakeoffAssist, "AI takeoff assist", AvionicsSettings.TakeoffAssist ? sel : btn);
+            AvionicsSettings.AirOpsTelemetry = GUI.Toggle(new Rect(12 + hw2(w), y, hw2(w), 20), AvionicsSettings.AirOpsTelemetry, "AI telemetry log", AvionicsSettings.AirOpsTelemetry ? sel : btn); y += 26;
             var small = AvionicsDraw.LabelSmall;
 
             // C4ISR

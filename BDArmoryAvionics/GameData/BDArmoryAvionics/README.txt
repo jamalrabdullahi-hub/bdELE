@@ -34,6 +34,17 @@ Flight profile (modular missile part menu): per-stage guidance switching, and an
 then the missile's own guidance for the terminal dive). Use GPS targeting and a throttleable last stage.
 Data link mid-course: radar missiles keep getting target updates from any networked sensor.
 
+Pilot AI air operations
+-----------------------
+Formation assist: wingmen hold the leader's bank and fix sideways error with limited bank, height with pitch
+(no inverted pulls), speed damped by closure rate. Takeoff assist: holds runway heading and centreline on the
+roll (wheel steering + rudder, wings level), rotates at 3°/s to 10° max. C2 panel AIR OPS:
+  Land    approach, 3.5° glideslope, flare, brake, stop (KSC runway built in; add your own with two GPS
+          points named "<name> RWY A" and "<name> RWY B" on the runway ends). Go-around if unstable.
+  Refuel  (AARS) join behind the nearest friendly tanker, stabilise, plug the probe into the drogue,
+          take fuel, disconnect. Tanker: straight and level at constant speed with drogues deployed.
+"AI telemetry log" in the BDA Avionics menu writes formation / landing / refuelling state to KSP.log.
+
 Infernal Robotics turrets (optional, needs Infernal Robotics Next)
 ------------------------------------------------------------------
 Every IR servo gets a "BDA turret control" part-menu section. Put a turret's rotating servos (e.g. a rotator

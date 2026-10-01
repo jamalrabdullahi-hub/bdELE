@@ -52,6 +52,8 @@ namespace BDArmory.Avionics
 
         public static string TaskString(Vessel v)
         {
+            var air = AirOps.Describe(v);
+            if (air != null) return air;
             var o = OrderFor(v);
             if (o == null) return "Free";
             return o.task switch
@@ -127,6 +129,7 @@ namespace BDArmory.Avionics
 
         public static void Release(Vessel v)
         {
+            AirOps.Cancel(v);
             Orders.Remove(v);
             AI(v)?.ReleaseCommand();
         }
@@ -141,6 +144,7 @@ namespace BDArmory.Avionics
 
         static Order New(Vessel v, C2Task task)
         {
+            AirOps.Cancel(v); // a new order replaces any landing / refuelling in progress
             var o = new Order { task = task, issued = Time.time };
             Orders[v] = o;
             return o;

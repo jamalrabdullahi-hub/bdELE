@@ -126,6 +126,21 @@ namespace BDArmory.Avionics
                 y += 24;
             }
 
+            if (n.IsAir || AirOps.OpFor(v) != null)
+            {
+                AvionicsDraw.ColorLabel(new Rect(x, y, w, 14), "AIR OPS", AvionicsDraw.LabelSmall, Accent); y += 14;
+                var op = AirOps.OpFor(v);
+                if (Button(new Rect(x, y, third, 20), "Land", op?.kind == AirOpKind.Landing)) { C2Tasking.Release(v); AirOps.StartLanding(v); }
+                var tanker = NearestTanker(net, v);
+                GUI.enabled = tanker != null;
+                if (Button(new Rect(x + third + 4, y, third, 20), "Refuel", op?.kind == AirOpKind.Refuel)) { C2Tasking.Release(v); AirOps.StartRefuel(v, tanker); }
+                GUI.enabled = true;
+                if (Button(new Rect(x + 2 * third + 8, y, third, 20), "Tanker", op?.kind == AirOpKind.Tanker)) { C2Tasking.Release(v); AirOps.StartTanker(v); }
+                y += 22;
+                if (tanker != null && op == null) { AvionicsDraw.ColorLabel(new Rect(x, y, w, 14), $"Nearest tanker: {tanker.GetName()}", AvionicsDraw.LabelSmall, AvionicsDraw.ScopeText); y += 14; }
+                y += 4;
+            }
+
             AvionicsDraw.ColorLabel(new Rect(x, y, w, 14), "ROE", AvionicsDraw.LabelSmall, Accent); y += 14;
             bool free = C2Tasking.WeaponsFree(v);
             if (Button(new Rect(x, y, half, 20), "HOLD FIRE", !free)) C2Tasking.SetWeaponsFree(v, false);
@@ -161,6 +176,22 @@ namespace BDArmory.Avionics
             if (Button(new Rect(x + third + 4, y, third, 20), "GPS here")) AvionicsContacts.AddGPS(new Vector3d(v.latitude, v.longitude, v.altitude), n.Name);
             if (Button(new Rect(x + 2 * third + 8, y, third, 20), "Deselect")) SelectedUnit = null;
             return y + 22;
+        }
+
+        /// <summary>Nearest other team aircraft carrying an AARS drogue.</summary>
+        static Vessel NearestTanker(TeamNetwork net, Vessel self)
+        {
+            Vessel best = null; float bestD = float.MaxValue;
+            foreach (var n in net.nodes)
+            {
+                if (n.vessel == self || !n.IsAir) continue;
+                bool hasDrogue = false;
+                foreach (var p in n.vessel.parts) if (p.Modules.Contains("FuelDrogue")) { hasDrogue = true; break; }
+                if (!hasDrogue) continue;
+                float d = (n.vessel.CoM - self.CoM).sqrMagnitude;
+                if (d < bestD) { bestD = d; best = n.vessel; }
+            }
+            return best;
         }
 
         static float DrawTrack(Rect r, TeamNetwork net, NetTrack t, NetNode unit)

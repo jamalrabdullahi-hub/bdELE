@@ -32,12 +32,26 @@ namespace BDArmory.Avionics
         static readonly MethodInfo adjustThrottle = AccessTools.Method(typeof(BDModulePilotAI), "AdjustThrottle");
         static readonly Dictionary<BDModulePilotAI, float> smoothedSpeed = new();
 
-        static bool InFormation(BDModulePilotAI ai, out Vector3 slot, out float dist)
+        // Slots set for this frame by other controllers (air-to-air refuelling holds a slot behind the tanker).
+        static readonly Dictionary<BDModulePilotAI, (Vector3 slot, Vessel leader, int frame)> slotOverrides = new();
+        public static void SetSlot(BDModulePilotAI ai, Vector3 slot, Vector3 refVel, Vector3 fwd, Vessel leader) => slotOverrides[ai] = (slot, leader, Time.frameCount);
+
+        static bool InFormation(BDModulePilotAI ai, out Vector3 slot, out float dist) => InFormation(ai, out slot, out dist, out _);
+
+        static bool InFormation(BDModulePilotAI ai, out Vector3 slot, out float dist, out Vessel leader)
         {
-            slot = default; dist = float.MaxValue;
-            if (!AvionicsSettings.FormationAssist || ai == null || ai.vessel == null) return false;
+            slot = default; dist = float.MaxValue; leader = null;
+            if (ai == null || ai.vessel == null) return false;
+            if (slotOverrides.TryGetValue(ai, out var o) && o.frame == Time.frameCount && o.leader != null)
+            {
+                slot = o.slot; leader = o.leader;
+                dist = (slot - (Vector3)ai.vessel.CoM).magnitude;
+                return dist < AssistRange;
+            }
+            if (!AvionicsSettings.FormationAssist) return false;
             if (ai.currentCommand != PilotCommands.Follow || ai.commandLeader == null || ai.commandLeader.vessel == null) return false;
             slot = (Vector3)(Vector3d)getFormationPosition.Invoke(ai, null);
+            leader = ai.commandLeader.vessel;
             dist = (slot - (Vector3)ai.vessel.CoM).magnitude;
             return dist < AssistRange;
         }
@@ -45,8 +59,7 @@ namespace BDArmory.Avionics
         /// <summary>Called from inside FlyToPosition, right after the stock follow hints and before terrain-avoidance overrides.</summary>
         public static void AdjustRollTarget(BDModulePilotAI ai)
         {
-            if (!InFormation(ai, out Vector3 slot, out float dist)) return;
-            var leader = ai.commandLeader.vessel;
+            if (!InFormation(ai, out Vector3 slot, out float dist, out Vessel leader)) return;
             Vector3 up = upDirection(ai);
             Vector3 leaderVel = leader.Velocity();
             Vector3 leaderFwd = leaderVel.sqrMagnitude > 1 ? leaderVel.normalized : leader.ReferenceTransform.up;
@@ -79,8 +92,7 @@ namespace BDArmory.Avionics
         /// <summary>After the stock follow logic: replace its speed target with a damped one.</summary>
         public static void AdjustSpeed(BDModulePilotAI ai)
         {
-            if (!InFormation(ai, out Vector3 slot, out _)) { smoothedSpeed.Remove(ai); return; }
-            var leader = ai.commandLeader.vessel;
+            if (!InFormation(ai, out Vector3 slot, out _, out Vessel leader)) { smoothedSpeed.Remove(ai); return; }
             Vector3 leaderVel = leader.Velocity();
             float leaderSpeed = leaderVel.magnitude;
             if (leaderSpeed < 1) return;
@@ -92,7 +104,22 @@ namespace BDArmory.Avionics
             if (smoothedSpeed.TryGetValue(ai, out float prev)) target = Mathf.Lerp(prev, target, 0.15f);
             smoothedSpeed[ai] = target;
             adjustThrottle.Invoke(ai, new object[] { target, true, true, false, -1f });
+
+            // Telemetry for tuning: slot error split into along / sideways / vertical, and how much we're wobbling.
+            if (AvionicsSettings.AirOpsTelemetry && Time.time >= nextLog.GetValueOrDefault(ai))
+            {
+                nextLog[ai] = Time.time + 2f;
+                Vector3 up = upDirection(ai);
+                Vector3 right = Vector3.Cross(up, leaderFwd).normalized;
+                Vector3 err = slot - (Vector3)ai.vessel.CoM;
+                var rt = ai.vessel.ReferenceTransform;
+                float bank = Mathf.Atan2(Vector3.Dot(up, rt.right), Vector3.Dot(up, -rt.forward)) * Mathf.Rad2Deg;
+                Debug.Log($"[BDArmoryAvionics]: Formation {ai.vessel.GetName()} -> {leader.GetName()}: along {alongErr:F1} m, side {Vector3.Dot(err, right):F1} m, " +
+                          $"vertical {Vector3.Dot(err, up):F1} m, closure {closure:F1} m/s, speed cmd {target:F0} m/s, bank {bank:F0}°, rates p/y/r {ai.vessel.angularVelocity.x:F2}/{ai.vessel.angularVelocity.z:F2}/{ai.vessel.angularVelocity.y:F2}");
+            }
         }
+
+        static readonly Dictionary<BDModulePilotAI, float> nextLog = new();
     }
 
     [HarmonyPatch(typeof(BDModulePilotAI), "UpdateFollowCommand")]
