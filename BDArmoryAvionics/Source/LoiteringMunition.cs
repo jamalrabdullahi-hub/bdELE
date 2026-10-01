@@ -79,6 +79,7 @@ namespace BDArmory.Avionics
         [KSPField(isPersistant = true)] public string homeName = "";
 
         public LMState state = LMState.Safe;
+        public Vector3d? presetLoiter;            // world point set by C2 before launch
         public bool manual;                       // operator is flying it
         public Vessel target;                     // target craft (null with a point target)
         public Vector3d targetPoint;              // lat/lon/alt of a point target
@@ -148,6 +149,7 @@ namespace BDArmory.Avionics
             Vector3d p = Vector3d.zero;
             var wm = home != null ? home.ActiveController().WM : null;
             if (wm != null && wm.designatedGPSInfo.worldPos != Vector3d.zero) p = wm.designatedGPSInfo.worldPos;
+            if (presetLoiter.HasValue) { p = presetLoiter.Value; presetLoiter = null; }
             if (p == Vector3d.zero) p = (Vector3d)vessel.CoM + (Vector3d)Horizontal(vessel.srf_velocity.sqrMagnitude > 25 ? (Vector3)vessel.srf_velocity : vessel.ReferenceTransform.up) * 2000;
             SetLoiter(p);
 
@@ -452,6 +454,51 @@ namespace BDArmory.Avionics
         public static bool IsMunition(Vessel v) { foreach (var m in all) if (m != null && m.vessel == v && m.armed) return true; return false; }
         public static ModuleLoiteringMunition For(Vessel v) { foreach (var m in all) if (m != null && m.vessel == v && m.lmEnabled) return m; return null; }
 
+        /// <summary>Armed, flying munitions of a team (for the C2 map and panels).</summary>
+        public static List<ModuleLoiteringMunition> Flying(BDTeam team)
+        {
+            var list = new List<ModuleLoiteringMunition>();
+            foreach (var m in all)
+                if (m != null && m.vessel != null && m.armed && m.state != LMState.Done && m.vessel.loaded && (team == null || m.Team == team)) list.Add(m);
+            return list;
+        }
+
+        /// <summary>Munitions still on a launcher craft (enabled, not armed).</summary>
+        public static List<ModuleLoiteringMunition> OnRack(Vessel launcher)
+        {
+            var list = new List<ModuleLoiteringMunition>();
+            foreach (var m in all) if (m != null && m.vessel == launcher && m.lmEnabled && !m.armed && m.part != launcher.rootPart) list.Add(m);
+            return list;
+        }
+
+        /// <summary>C2 launch: release one munition from the launcher (its decoupler) and send it to loiter at a point.</summary>
+        public static string Launch(Vessel launcher, Vector3d loiterWorld)
+        {
+            var rack = OnRack(launcher);
+            if (rack.Count == 0) return "No loitering munitions on this craft";
+            var m = rack[0];
+            var dec = FindDecoupler(m.part);
+            if (dec == null) return $"{m.part.partInfo.title}: no decoupler to release it";
+            m.presetLoiter = loiterWorld;
+            m.autoArm = true;
+            if (dec is ModuleDecouple d) d.Decouple();
+            else if (dec is ModuleAnchoredDecoupler ad) ad.Decouple();
+            Debug.Log($"[BDArmoryAvionics]: C2 launched a loitering munition from {launcher.GetName()}");
+            return null;
+        }
+
+        /// <summary>The first decoupler between the munition and the launcher (on the munition or above it).</summary>
+        static PartModule FindDecoupler(Part p)
+        {
+            for (var q = p; q != null; q = q.parent)
+            {
+                PartModule d = q.FindModuleImplementing<ModuleDecouple>();
+                if (d == null) d = q.FindModuleImplementing<ModuleAnchoredDecoupler>();
+                if (d != null) return d;
+            }
+            return null;
+        }
+
         /// <summary>The craft that launched/controlled a munition (by name), for kill credit.</summary>
         public static Vessel OperatorOf(string munitionName)
         {
@@ -499,6 +546,8 @@ namespace BDArmory.Avionics
         }
 
         // ---- Camera handover ----
+
+        public static void WatchStatic(ModuleLoiteringMunition lm, bool takeControl) { if (Instance != null) Instance.Watch(lm, takeControl); }
 
         public void Watch(ModuleLoiteringMunition lm, bool takeControl)
         {

@@ -14,6 +14,7 @@ namespace BDArmory.Avionics
         public const int DrawerID = 71730311;
         static readonly List<(Vector2 p, NetNode n)> nodeScreen = new();
         static readonly List<(Vector2 p, NetTrack t)> trackScreen = new();
+        static readonly List<(Vector2 p, ModuleLoiteringMunition lm)> lmScreen = new();
         static Vector2 drawerScroll;
 
         public static Rect Drawer
@@ -85,6 +86,8 @@ namespace BDArmory.Avionics
             trackScreen.Clear();
             foreach (var n in net.nodes) if (ToScreen(n.vessel.CoMD, out var p)) nodeScreen.Add((p, n));
             if (C4ISRSettings.OverlayTracks) foreach (var t in net.tracks.Values) if (ToScreen(t.position, out var p)) trackScreen.Add((p, t));
+            lmScreen.Clear();
+            foreach (var lm in LoiteringMunitions.Flying(net.team)) if (ToScreen(lm.vessel.CoMD, out var p)) lmScreen.Add((p, lm));
 
             if (e.type == EventType.Repaint && AvionicsDraw.Begin())
             {
@@ -109,6 +112,12 @@ namespace BDArmory.Avionics
                     }
                 }
                 foreach (var (p, n) in nodeScreen) C2UI.NodeSymbol(p, n, C2UI.SelectedUnit == n.vessel);
+                foreach (var (p, lm) in lmScreen)
+                {
+                    if (lm.state != LMState.Terminal) SurfaceRing(body, lm.loiterLat, lm.loiterLon, lm.loiterRadius, C2UI.MunitionColor * 0.7f);
+                    if (lm.CanStrike && ToScreen(lm.TargetPos, out var tp)) { if (lm.state == LMState.Terminal) AvionicsDraw.Line(p, tp, 1.5f, AvionicsDraw.Missile); else AvionicsDraw.DashedLine(p, tp, 1.5f, AvionicsDraw.Unknown, 6, 4); }
+                    C2UI.MunitionSymbol(p, lm, C2UI.SelectedMunition == lm, 0);
+                }
                 foreach (var (p, t) in trackScreen)
                 {
                     ToScreen(t.position + t.velocity * 60f, out var lead);
@@ -120,6 +129,7 @@ namespace BDArmory.Avionics
             {
                 foreach (var (p, n) in nodeScreen) AvionicsDraw.ShadowLabel(new Rect(p.x + 10, p.y - 7, 160, 14), n.Name, AvionicsDraw.LabelSmall, n.connected ? AvionicsDraw.HudText : AvionicsDraw.Neutral);
                 foreach (var (p, t) in trackScreen) AvionicsDraw.ShadowLabel(new Rect(p.x + 10, p.y - 7, 80, 14), t.Label, AvionicsDraw.LabelSmall, C2UI.TrackColor(t));
+                foreach (var (p, lm) in lmScreen) AvionicsDraw.ShadowLabel(new Rect(p.x + 10, p.y - 7, 160, 14), $"{lm.Label} {lm.state}", AvionicsDraw.LabelSmall, C2UI.MunitionColor);
             }
 
             // Legend
@@ -152,6 +162,9 @@ namespace BDArmory.Avionics
             Vessel unit = null; NetTrack track = null;
             foreach (var (p, n) in nodeScreen) { float d = (p - mouse).sqrMagnitude; if (d < best) { best = d; unit = n.vessel; track = null; } }
             foreach (var (p, t) in trackScreen) { float d = (p - mouse).sqrMagnitude; if (d < best) { best = d; track = t; unit = null; } }
+            ModuleLoiteringMunition lmPick = null;
+            foreach (var (p, lm) in lmScreen) { float d = (p - mouse).sqrMagnitude; if (d < best) { best = d; lmPick = lm; unit = null; track = null; } }
+            if (lmPick != null) { C2UI.Select(lmPick); e.Use(); return; }
             if (unit != null) { C2UI.Select(unit); e.Use(); }
             else if (track != null) { C2UI.Select(track); e.Use(); }
         }

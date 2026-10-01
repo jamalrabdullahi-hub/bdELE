@@ -59,6 +59,12 @@ In its camera (HUD with crosshair, target box, altitude, speed, fuel):
   Keypad Enter  strike what's under the crosshair (craft or ground point) / approve the reported target
   Keypad 5      take / give back control (you fly it with the normal controls; fuzes stay live)
   Keypad .      detonate        Keypad -   back to the home craft (also automatic after it detonates)
+C2 console / map overlay: munitions show as orange triangles with their loiter ring and a line to their target
+(dashed yellow = awaiting approval, red = striking). Approval requests appear at the top of the C2 panel
+(APPROVE / Wave off / Watch). Select a munition for its panel: strike mode, target type, approve, wave off,
+loiter at / strike a map point, strike the selected track, watch, take control, detonate. A selected hostile
+track lists "Strike with LM-n" for every flying munition. A unit carrying munitions shows "Launch one: loiter at
+(click map)": it releases the next munition (its decoupler) and sends it to that point.
 Its kills go to the launcher's crew records (kill.LM). Keys can be changed in Avionics.cfg.
 
 Kill log and after-action report

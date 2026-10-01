@@ -235,6 +235,18 @@ namespace BDArmory.Avionics
                     labels.Add((p + new Vector2(9, -7), n.Name, n.connected ? AvionicsDraw.HudText : AvionicsDraw.Neutral));
                 }
 
+                // Loitering munitions: loiter ring, line to target, symbol
+                foreach (var lm in LoiteringMunitions.Flying(net.team))
+                {
+                    var p = ToMap(m, body, lm.vessel.latitude, lm.vessel.longitude);
+                    var lp = ToMap(m, body, lm.loiterLat, lm.loiterLon);
+                    if (lm.state != LMState.Terminal) ClipCircle(m, lp, lm.loiterRadius * pxPerM, C2UI.MunitionColor * 0.7f);
+                    if (lm.CanStrike) ClipLine(m, p, ToMap(m, body, lm.TargetPos), 1.5f, lm.state == LMState.Terminal ? AvionicsDraw.Missile : AvionicsDraw.Unknown, dashed: lm.state != LMState.Terminal);
+                    if (!In(m, p)) continue;
+                    C2UI.MunitionSymbol(p, lm, C2UI.SelectedMunition == lm, C2UI.Heading(lm.vessel));
+                    labels.Add((p + new Vector2(9, -7), lm.Label, C2UI.MunitionColor));
+                }
+
                 // Tracks with a 60 s velocity leader
                 if (C4ISRSettings.MapTracks)
                     foreach (var t in net.tracks.Values)
@@ -319,6 +331,13 @@ namespace BDArmory.Avionics
                 float d = (ToMap(m, body, t.position) - mouse).sqrMagnitude;
                 if (d < best) { best = d; track = t; unit = null; }
             }
+            ModuleLoiteringMunition lmPick = null;
+            foreach (var lm in LoiteringMunitions.Flying(net.team))
+            {
+                float d = (ToMap(m, body, lm.vessel.latitude, lm.vessel.longitude) - mouse).sqrMagnitude;
+                if (d < best) { best = d; lmPick = lm; unit = null; track = null; }
+            }
+            if (lmPick != null) { C2UI.Select(lmPick); return true; }
             if (unit != null) { C2UI.Select(unit); follow = false; return true; }
             if (track != null) { C2UI.Select(track); return true; }
             return false;

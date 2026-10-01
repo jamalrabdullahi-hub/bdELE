@@ -5,7 +5,7 @@ using BDArmory.UI;
 
 namespace BDArmory.Avionics
 {
-    public enum PlaceMode { None, MoveTo, Strike, Waypoint, DropGPS }
+    public enum PlaceMode { None, MoveTo, Strike, Waypoint, DropGPS, LMLaunch, LMLoiter, LMStrike }
 
     /// <summary>
     /// Selection, symbols and the tasking panels shared by the C2 console (option A) and the map view overlay (option B).
@@ -15,6 +15,7 @@ namespace BDArmory.Avionics
         public static Vessel SelectedUnit;
         public static NetTrack SelectedTrack;
         public static PlaceMode Placing = PlaceMode.None;
+        public static ModuleLoiteringMunition SelectedMunition;
         static Vector2 routeScroll;
 
         public static readonly Color Panel = new(0.06f, 0.08f, 0.09f, 0.94f);
@@ -24,7 +25,28 @@ namespace BDArmory.Avionics
         public static readonly Color LinkLost = new(0.75f, 0.34f, 0.29f, 0.9f);
         public static readonly Color Assignment = new(0.50f, 0.82f, 0.55f, 0.95f);
 
-        public static void Select(Vessel unit) { SelectedUnit = unit; SelectedTrack = null; Placing = PlaceMode.None; }
+        public static void Select(Vessel unit) { SelectedUnit = unit; SelectedTrack = null; SelectedMunition = null; Placing = PlaceMode.None; }
+        public static void Select(ModuleLoiteringMunition m) { SelectedMunition = m; SelectedUnit = null; Placing = PlaceMode.None; }
+
+        public static readonly Color MunitionColor = new(1f, 0.62f, 0.25f);
+
+        /// <summary>Loitering munition symbol: small triangle in its heading, ring when manual, box when selected.</summary>
+        public static void MunitionSymbol(Vector2 p, ModuleLoiteringMunition m, bool selected, float headingDeg)
+        {
+            var c = m.state == LMState.Terminal ? AvionicsDraw.Missile : m.state == LMState.Pending ? AvionicsDraw.Unknown : MunitionColor;
+            AvionicsDraw.Triangle(p, 6, headingDeg, 2, c);
+            if (m.manual) AvionicsDraw.Circle(p, 9, 1.2f, AvionicsDraw.LockBox, 12);
+            if (selected) AvionicsDraw.Box(p, 12, 1.5f, AvionicsDraw.LockBox);
+        }
+
+        public static float Heading(Vessel v)
+        {
+            var up = (v.CoM - v.mainBody.position).normalized;
+            var north = Vector3.ProjectOnPlane(v.mainBody.transform.up, up).normalized;
+            var vel = Vector3.ProjectOnPlane(v.srf_velocity, up);
+            if (vel.sqrMagnitude < 1) return 0;
+            return Vector3.SignedAngle(north, vel, up);
+        }
         public static void Select(NetTrack track) { SelectedTrack = track; Placing = PlaceMode.None; }
 
         public static Color TrackColor(NetTrack t) =>
@@ -82,6 +104,14 @@ namespace BDArmory.Avionics
             if (unit == null) SelectedUnit = null;
 
             float y = r.y, w = r.width, x = r.x;
+            y = DrawApprovals(new Rect(x, y, w, r.height), net);
+            if (SelectedMunition != null && (SelectedMunition.vessel == null || SelectedMunition.state == LMState.Done)) SelectedMunition = null;
+            if (SelectedMunition != null)
+            {
+                y = DrawMunition(new Rect(x, y, w, r.height), net, SelectedMunition) + 8;
+                if (SelectedTrack != null) y = DrawTrack(new Rect(x, y, w, r.yMax - y), net, SelectedTrack, null);
+                return y - r.y;
+            }
             if (unit == null && SelectedTrack == null)
             {
                 AvionicsDraw.ColorLabel(new Rect(x, y, w, 40), "Click a unit or track on the map,\nor a row in the lists.", AvionicsDraw.Label, AvionicsDraw.ScopeText);
@@ -126,6 +156,14 @@ namespace BDArmory.Avionics
                 if (Button(new Rect(x + half + 4, y, half, 20), "RTB")) C2Tasking.RTB(v);
                 y += 22;
                 if (Button(new Rect(x, y, w, 20), "Release (AI free)")) C2Tasking.Release(v);
+                y += 24;
+            }
+
+            var rack = LoiteringMunitions.OnRack(v);
+            if (rack.Count > 0)
+            {
+                AvionicsDraw.ColorLabel(new Rect(x, y, w, 14), $"LOITERING MUNITIONS: {rack.Count} on board", AvionicsDraw.LabelSmall, Accent); y += 14;
+                if (Button(new Rect(x, y, w, 20), "Launch one: loiter at (click map)", Placing == PlaceMode.LMLaunch)) Placing = Placing == PlaceMode.LMLaunch ? PlaceMode.None : PlaceMode.LMLaunch;
                 y += 24;
             }
 
@@ -181,6 +219,61 @@ namespace BDArmory.Avionics
             return y + 22;
         }
 
+        /// <summary>Munitions waiting for strike approval, at the top of the panel.</summary>
+        static float DrawApprovals(Rect r, TeamNetwork net)
+        {
+            float x = r.x, y = r.y, w = r.width;
+            foreach (var m in LoiteringMunitions.Flying(net.team))
+            {
+                if (m.state != LMState.Pending || m.target == null) continue;
+                AvionicsDraw.FilledRect(new Rect(x, y, w, 40), new Color(0.35f, 0.28f, 0.05f, 0.85f));
+                float d = (m.target.CoM - m.vessel.CoM).magnitude;
+                AvionicsDraw.ColorLabel(new Rect(x + 4, y + 2, w - 8, 14), $"{m.Label} requests strike: {m.targetLabel} ({d / 1000f:F1} km)", AvionicsDraw.LabelSmall, AvionicsDraw.Unknown);
+                float b = (w - 16) / 3;
+                if (Button(new Rect(x + 4, y + 18, b, 19), "APPROVE")) m.Approve();
+                if (Button(new Rect(x + 8 + b, y + 18, b, 19), "Wave off")) m.WaveOff();
+                if (Button(new Rect(x + 12 + 2 * b, y + 18, b, 19), "Watch")) LoiteringMunitions.WatchStatic(m, false);
+                y += 44;
+            }
+            return y;
+        }
+
+        static float DrawMunition(Rect r, TeamNetwork net, ModuleLoiteringMunition m)
+        {
+            float x = r.x, y = r.y, w = r.width, half = (w - 4) / 2, third = (w - 8) / 3;
+            var v = m.vessel;
+            AvionicsDraw.ColorLabel(new Rect(x, y, w, 14), "LOITERING MUNITION", AvionicsDraw.LabelSmall, Accent); y += 14;
+            AvionicsDraw.ColorLabel(new Rect(x, y, w, 18), m.Label, AvionicsDraw.Header, MunitionColor); y += 18;
+            AvionicsDraw.ColorLabel(new Rect(x, y, w, 14), $"{(m.manual ? "MANUAL - " : "")}{m.state}{(m.CanStrike ? $" > {m.targetLabel}" : "")}", AvionicsDraw.LabelSmall, m.state == LMState.Terminal ? AvionicsDraw.Missile : AvionicsDraw.HudText); y += 14;
+            AvionicsDraw.ColorLabel(new Rect(x, y, w, 14), $"{AvionicsDraw.FormatAlt(v.altitude)} · {v.srfSpeed:F0} m/s · {(v.CoM - (Vector3)m.LoiterWorld).magnitude / 1000f:F1} km from loiter pt", AvionicsDraw.LabelSmall, AvionicsDraw.ScopeText); y += 14;
+            AvionicsDraw.ColorLabel(new Rect(x, y, w, 14), $"Home: {(string.IsNullOrEmpty(m.homeName) ? "-" : m.homeName)}", AvionicsDraw.LabelSmall, AvionicsDraw.ScopeText); y += 18;
+
+            int mi = System.Array.IndexOf(ModuleLoiteringMunition.StrikeModes, m.strikeMode);
+            if (Button(new Rect(x, y, half, 20), m.strikeMode)) m.strikeMode = ModuleLoiteringMunition.StrikeModes[(mi + 1) % ModuleLoiteringMunition.StrikeModes.Length];
+            int ti = System.Array.IndexOf(ModuleLoiteringMunition.TargetTypes, m.targetType);
+            if (Button(new Rect(x + half + 4, y, half, 20), m.targetType)) m.targetType = ModuleLoiteringMunition.TargetTypes[(ti + 1) % ModuleLoiteringMunition.TargetTypes.Length];
+            y += 22;
+            GUI.enabled = m.state == LMState.Pending;
+            if (Button(new Rect(x, y, half, 20), "APPROVE", m.state == LMState.Pending)) m.Approve();
+            GUI.enabled = m.state == LMState.Pending || m.state == LMState.Terminal;
+            if (Button(new Rect(x + half + 4, y, half, 20), "Wave off")) m.WaveOff();
+            GUI.enabled = true;
+            y += 22;
+            if (Button(new Rect(x, y, half, 20), "Loiter at (map)", Placing == PlaceMode.LMLoiter)) Placing = Placing == PlaceMode.LMLoiter ? PlaceMode.None : PlaceMode.LMLoiter;
+            if (Button(new Rect(x + half + 4, y, half, 20), "Strike point (map)", Placing == PlaceMode.LMStrike)) Placing = Placing == PlaceMode.LMStrike ? PlaceMode.None : PlaceMode.LMStrike;
+            y += 22;
+            GUI.enabled = SelectedTrack != null && SelectedTrack.vessel != null;
+            if (Button(new Rect(x, y, w, 20), SelectedTrack != null ? $"Strike track {SelectedTrack.Label}" : "Strike track (select one)")) m.Strike(SelectedTrack.vessel, null, "C2 track");
+            GUI.enabled = true;
+            y += 22;
+            if (Button(new Rect(x, y, third, 20), "Watch")) LoiteringMunitions.WatchStatic(m, false);
+            if (Button(new Rect(x + third + 4, y, third, 20), m.manual ? "MANUAL" : "Control", m.manual)) { if (m.manual) m.manual = false; else LoiteringMunitions.WatchStatic(m, true); }
+            if (Button(new Rect(x + 2 * third + 8, y, third, 20), "DETONATE")) m.Detonate("C2");
+            y += 22;
+            if (Button(new Rect(x, y, w, 20), "Deselect")) SelectedMunition = null;
+            return y + 22;
+        }
+
         /// <summary>Nearest other team aircraft carrying an AARS drogue.</summary>
         static Vessel NearestTanker(TeamNetwork net, Vessel self)
         {
@@ -223,6 +316,19 @@ namespace BDArmory.Avionics
                     y += 22;
                 }
             }
+            var lms = LoiteringMunitions.Flying(net.team);
+            if (lms.Count > 0 && t.hostile && !t.isMissile)
+            {
+                AvionicsDraw.ColorLabel(new Rect(x, y, w, 14), "LOITERING MUNITIONS", AvionicsDraw.LabelSmall, Accent); y += 14;
+                foreach (var m in lms)
+                {
+                    if (y > r.yMax - 46) break;
+                    float d = (t.position - m.vessel.CoM).magnitude;
+                    bool on = m.target == t.vessel && m.state == LMState.Terminal;
+                    if (Button(new Rect(x, y, w, 20), on ? $"{m.Label} striking ({d / 1000f:F1} km)" : $"Strike with {m.Label} ({d / 1000f:F1} km)", on)) m.Strike(t.vessel, null, "C2 tasking");
+                    y += 22;
+                }
+            }
             if (Button(new Rect(x, y, half, 20), "Drop GPS on it")) AvionicsContacts.AddGPS(new Vector3d(body.GetLatitude(t.position), body.GetLongitude(t.position), alt), t.Label);
             if (Button(new Rect(x + half + 4, y, half, 20), "Deselect")) SelectedTrack = null;
             return y + 22;
@@ -240,6 +346,19 @@ namespace BDArmory.Avionics
                 case PlaceMode.MoveTo: if (v != null) C2Tasking.MoveTo(v, WithCruiseAlt(v, geo)); break;
                 case PlaceMode.Strike: if (v != null) C2Tasking.Strike(v, geo); break;
                 case PlaceMode.Waypoint: if (v != null) C2Tasking.AddWaypoint(v, WithCruiseAlt(v, geo)); keep = true; break;
+                case PlaceMode.LMLaunch:
+                    if (v != null)
+                    {
+                        var err = LoiteringMunitions.Launch(v, v.mainBody.GetWorldSurfacePosition(geo.x, geo.y, geo.z));
+                        ScreenMessages.PostScreenMessage(err ?? $"{v.GetName()}: loitering munition away", 3f, ScreenMessageStyle.UPPER_CENTER);
+                    }
+                    break;
+                case PlaceMode.LMLoiter:
+                    if (SelectedMunition != null) SelectedMunition.SetLoiter(SelectedMunition.vessel.mainBody.GetWorldSurfacePosition(geo.x, geo.y, geo.z));
+                    break;
+                case PlaceMode.LMStrike:
+                    if (SelectedMunition != null) SelectedMunition.Strike(null, SelectedMunition.vessel.mainBody.GetWorldSurfacePosition(geo.x, geo.y, geo.z + 1), "C2 map point");
+                    break;
             }
             if (!keep) Placing = PlaceMode.None;
             return true;
@@ -258,6 +377,9 @@ namespace BDArmory.Avionics
             PlaceMode.Strike => "Click the map: strike here",
             PlaceMode.Waypoint => "Click the map: add patrol waypoint (Esc to finish)",
             PlaceMode.DropGPS => "Click the map: drop GPS point (Shift: keep dropping)",
+            PlaceMode.LMLaunch => "Click the map: launch a loitering munition to loiter here",
+            PlaceMode.LMLoiter => "Click the map: move the munition's loiter point here",
+            PlaceMode.LMStrike => "Click the map: munition strikes this point",
             _ => "",
         };
     }
