@@ -74,6 +74,7 @@ namespace BDArmory.Avionics
             try
             {
                 var root = ConfigNode.Load(SettingsPath);
+                C4ISRSettings.Load(root?.GetNode("C4ISR"));
                 var node = root?.GetNode("AVIONICS");
                 if (node == null) return;
 
@@ -180,6 +181,8 @@ namespace BDArmory.Avionics
                 foreach (var kvp in GPSGroups)
                     if (!string.IsNullOrEmpty(kvp.Value))
                         groups.AddValue(kvp.Key.Replace(',', '_'), kvp.Value);
+
+                C4ISRSettings.Save(root.AddNode("C4ISR"));
 
                 Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath));
                 root.Save(SettingsPath);

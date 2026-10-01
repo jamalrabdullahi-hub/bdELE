@@ -131,7 +131,11 @@
     <Compile Include="Avionics\AvionicsContacts.cs" />
     <Compile Include="Avionics\AvionicsDraw.cs" />
     <Compile Include="Avionics\AvionicsSettings.cs" />
+    <Compile Include="Avionics\C2Map.cs" />
+    <Compile Include="Avionics\C4ISRSettings.cs" />
+    <Compile Include="Avionics\DataLinkNetwork.cs" />
     <Compile Include="Avionics\EjectionSystem.cs" />
+    <Compile Include="Avionics\IADSController.cs" />
     <Compile Include="Avionics\FLIRModes.cs" />
     <Compile Include="Avionics\GPSManagerWindow.cs" />
     <Compile Include="Avionics\GPSMarkers.cs" />

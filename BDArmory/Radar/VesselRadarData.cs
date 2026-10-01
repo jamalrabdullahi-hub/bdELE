@@ -1837,7 +1837,9 @@ namespace BDArmory.Radar
         {
             displayedIRTargets.RemoveAll(t => t.detectedByIRST == irst);
         }
-        private void UnlinkVRD(VesselRadarData vrd)
+        public bool IsLinkedVRD(VesselRadarData vrd) => externalVRDs != null && externalVRDs.Contains(vrd);
+
+        public void UnlinkVRD(VesselRadarData vrd)
         {
             if (BDArmorySettings.DEBUG_RADAR) Debug.Log("[BDArmory.VesselRadarData]: Unlinking VRD: " + vrd.vessel.vesselName);
             externalVRDs.Remove(vrd);

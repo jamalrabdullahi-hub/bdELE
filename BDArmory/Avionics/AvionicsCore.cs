@@ -34,7 +34,7 @@ namespace BDArmory.Avionics
 
         void Start()
         {
-            menuRect = new Rect(Screen.width - 300, 90, 240, 252);
+            menuRect = new Rect(Screen.width - 300, 90, 240, 420);
             radarRectIndex = GUIUtils.RegisterGUIRect(new Rect());
             listRectIndex = GUIUtils.RegisterGUIRect(new Rect());
             gpsRectIndex = GUIUtils.RegisterGUIRect(new Rect());
@@ -177,6 +177,25 @@ namespace BDArmory.Avionics
             AvionicsSettings.AutoEjectOnDestruction = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.AutoEjectOnDestruction, "Auto-eject if cockpit destroyed", AvionicsSettings.AutoEjectOnDestruction ? sel : btn); y += 22;
             AvionicsSettings.AutoEjectBeforeImpact = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.AutoEjectBeforeImpact, "Auto-eject before ground impact", AvionicsSettings.AutoEjectBeforeImpact ? sel : btn); y += 26;
             var small = AvionicsDraw.LabelSmall;
+
+            // C4ISR (temporary controls until the C2 / IADS / data link windows are built)
+            AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), "C4ISR", AvionicsDraw.Header, AvionicsDraw.HudText); y += 16;
+            C4ISRSettings.GlobalC2 = GUI.Toggle(new Rect(8, y, w, 20), C4ISRSettings.GlobalC2, C4ISRSettings.GlobalC2 ? "Global C2: on" : $"Global C2: off ({C4ISRSettings.LinkModel})", C4ISRSettings.GlobalC2 ? sel : btn); y += 22;
+            if (!C4ISRSettings.GlobalC2 && GUI.Button(new Rect(8, y, w, 20), $"Link model: {C4ISRSettings.LinkModel}", btn))
+                C4ISRSettings.LinkModel = C4ISRSettings.LinkModel == LinkModel.CommNet ? LinkModel.LineOfSight : LinkModel.CommNet;
+            if (!C4ISRSettings.GlobalC2) y += 22;
+            C4ISRSettings.IADSEnabled = GUI.Toggle(new Rect(8, y, w, 20), C4ISRSettings.IADSEnabled, "IADS controller", C4ISRSettings.IADSEnabled ? sel : btn); y += 22;
+            if (GUI.Button(new Rect(8, y, w, 20), $"EMCON {C4ISRSettings.EmconName(C4ISRSettings.Emcon)}", btn))
+                C4ISRSettings.Emcon = (EmconLevel)(((int)C4ISRSettings.Emcon + 1) % 4);
+            y += 24;
+            var net = DataLinkNetwork.PlayerNetwork;
+            var iads = net != null ? IADSController.For(net.team) : null;
+            int engaged = 0;
+            if (iads != null) foreach (var s in iads.sites.Values) if (s.assigned != null) engaged++;
+            AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), net == null ? "Net: no weapon manager" : $"Net: {net.ConnectedCount}/{net.nodes.Count} linked, {net.tracks.Count} tracks", small, AvionicsDraw.ScopeText); y += 13;
+            AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), iads == null ? "IADS: idle" : $"IADS: {iads.sites.Count} SAM sites, {engaged} engaging", small, AvionicsDraw.ScopeText); y += 13;
+            if (iads != null && iads.log.Count > 0) AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), iads.log[0], small, AvionicsDraw.ScopeText);
+            y += 17;
             AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), "FLIR and the pod HUD are controlled from", small, AvionicsDraw.ScopeText); y += 13;
             AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), "the bottom of the Target Camera window.", small, AvionicsDraw.ScopeText); y += 16;
             AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), "Keys are set in PluginData/Avionics.cfg", small, AvionicsDraw.ScopeText);

@@ -425,8 +425,12 @@ namespace BDArmory.Radar
                 vesselRadarData.AddRadar(this);
         }
 
+        // Avionics IADS: emissions control can keep a radar switched off.
+        public static System.Func<ModuleRadar, bool> EmconBlocked;
+
         public void EnableRadar()
         {
+            if (EmconBlocked != null && EmconBlocked(this)) return;
             radarEnabled = true;
             EnsureVesselRadarData(true);
 
