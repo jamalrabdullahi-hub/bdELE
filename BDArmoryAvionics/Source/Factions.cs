@@ -46,6 +46,17 @@ namespace BDArmory.Avionics
         public bool hasRunway;
         public double latA, lonA, latB, lonB;
         public BaseStatus status = BaseStatus.Operational;
+        // Phase 2: logistics and damage
+        public float health = 100f;                 // 0..100
+        public double runwayClosedUntil;            // UT
+        public float fuel = 20000f, fuelCap = 20000f;
+        public float ordnance = 500f, ordnanceCap = 500f;
+        public double lastDailyUT = -1;
+        public readonly List<InvItem> inventory = new();
+        public float captureProgress;               // runtime: seconds an enemy has held it
+        public string capturer;
+
+        public bool RunwayOpen => Planetarium.GetUniversalTime() >= runwayClosedUntil && status != BaseStatus.Destroyed;
 
         public Runway Runway(CelestialBody body) => hasRunway ? new Runway { name = site, body = body, latA = latA, lonA = lonA, latB = latB, lonB = lonB } : null;
 
@@ -57,6 +68,12 @@ namespace BDArmory.Avionics
             n.AddValue("length", length.ToString("R", ci));
             n.AddValue("status", status);
             if (hasRunway) n.AddValue("runway", string.Join(",", Array.ConvertAll(new[] { latA, lonA, latB, lonB }, d => d.ToString("R", ci))));
+            n.AddValue("health", health.ToString("R", ci));
+            n.AddValue("runwayClosedUntil", runwayClosedUntil.ToString("R", ci));
+            n.AddValue("fuel", fuel.ToString("R", ci)); n.AddValue("fuelCap", fuelCap.ToString("R", ci));
+            n.AddValue("ordnance", ordnance.ToString("R", ci)); n.AddValue("ordnanceCap", ordnanceCap.ToString("R", ci));
+            n.AddValue("lastDailyUT", lastDailyUT.ToString("R", ci));
+            foreach (var i in inventory) { var c = n.AddNode("AIRCRAFT"); c.AddValue("craft", i.craft); c.AddValue("authorized", i.authorized); c.AddValue("available", i.available); c.AddValue("lost", i.lost); c.AddValue("path", i.path ?? ""); }
         }
 
         public static Base Load(ConfigNode n)
@@ -68,6 +85,19 @@ namespace BDArmory.Avionics
             if (Enum.TryParse(n.GetValue("status"), out BaseStatus s)) b.status = s;
             var r = (n.GetValue("runway") ?? "").Split(',');
             if (r.Length == 4 && double.TryParse(r[0], st, ci, out b.latA) && double.TryParse(r[1], st, ci, out b.lonA) && double.TryParse(r[2], st, ci, out b.latB) && double.TryParse(r[3], st, ci, out b.lonB)) b.hasRunway = true;
+            if (float.TryParse(n.GetValue("health"), st, ci, out float h)) b.health = h;
+            double.TryParse(n.GetValue("runwayClosedUntil"), st, ci, out b.runwayClosedUntil);
+            if (float.TryParse(n.GetValue("fuel"), st, ci, out float fu)) b.fuel = fu;
+            if (float.TryParse(n.GetValue("fuelCap"), st, ci, out float fc)) b.fuelCap = fc;
+            if (float.TryParse(n.GetValue("ordnance"), st, ci, out float o)) b.ordnance = o;
+            if (float.TryParse(n.GetValue("ordnanceCap"), st, ci, out float oc)) b.ordnanceCap = oc;
+            if (!double.TryParse(n.GetValue("lastDailyUT"), st, ci, out b.lastDailyUT)) b.lastDailyUT = -1;
+            foreach (var c in n.GetNodes("AIRCRAFT"))
+            {
+                var i = new InvItem { craft = c.GetValue("craft") ?? "", path = c.GetValue("path") ?? "" };
+                int.TryParse(c.GetValue("authorized"), out i.authorized); int.TryParse(c.GetValue("available"), out i.available); int.TryParse(c.GetValue("lost"), out i.lost);
+                b.inventory.Add(i);
+            }
             return b;
         }
     }
@@ -203,6 +233,14 @@ namespace BDArmory.Avionics
 
         void Start() => StartCoroutine(SeedWhenReady());
 
+        float nextTick;
+        void Update()
+        {
+            if (Time.time < nextTick || HighLogic.CurrentGame == null) return;
+            nextTick = Time.time + 2f;
+            BaseLogistics.Daily(this);
+        }
+
         /// <summary>First run: Blue (player, team A) holds KSC and Kerman Atoll; Red (AI, team B) holds Kojave Sands and Baikerbanur.</summary>
         IEnumerator SeedWhenReady()
         {
@@ -254,7 +292,7 @@ namespace BDArmory.Avionics
             if (Instance == null) yield break;
             foreach (var b in Instance.bases)
             {
-                if (!b.hasRunway || b.status == BaseStatus.Destroyed || b.site == "Runway" || b.site == "KSC") continue; // KSC is built in
+                if (!b.hasRunway || !b.RunwayOpen || b.site == "Runway" || b.site == "KSC") continue; // KSC is built in; closed runways are skipped
                 var f = FactionByName(b.faction);
                 if (team != null && f != null && f.team != team.Name) continue;
                 yield return b.Runway(body);
@@ -269,11 +307,26 @@ namespace BDArmory.Avionics
         float next;
         readonly HashSet<uint> assigned = new();
 
+        void Start()
+        {
+            BaseLogistics.Subscribe();
+            GameEvents.onGameSceneLoadRequested.Add(OnScene);
+        }
+
+        void OnScene(GameScenes s) => BaseLogistics.SceneLeaving();
+
+        void OnDestroy()
+        {
+            GameEvents.onGameSceneLoadRequested.Remove(OnScene);
+            BaseLogistics.Unsubscribe();
+        }
+
         void Update()
         {
             if (!HighLogic.LoadedSceneIsFlight || FactionsScenario.Instance == null || Time.time < next) return;
             next = Time.time + 3f;
             FactionsScenario.Instance.RefreshFromKK();
+            BaseLogistics.FlightTick();
             foreach (var v in FlightGlobals.VesselsLoaded)
             {
                 if (v == null || v.packed || assigned.Contains(v.persistentId) || v.missionTime > 120) continue;
@@ -282,6 +335,7 @@ namespace BDArmory.Avionics
                 var wm = v.ActiveController().WM;
                 if (f == null || wm == null) continue;
                 assigned.Add(v.persistentId);
+                BaseLogistics.OnLaunch(v, b, f);
                 if (wm.Team == null || wm.Team.Name != f.team)
                 {
                     wm.SetTeam(BDTeam.Get(f.team));
@@ -297,7 +351,8 @@ namespace BDArmory.Avionics
     {
         public static bool Show;
         const int WindowID = 71730340;
-        static Rect rect = new(120, 80, 560, 560);
+        static Rect rect = new(120, 60, 600, 640);
+        Base selectedBase;
         Vector2 scroll;
         int tab;
         List<KKBridge.Site> sites;
@@ -344,7 +399,8 @@ namespace BDArmory.Avionics
             {
                 if (!KKBridge.Available) { AvionicsDraw.ColorLabel(new Rect(8, y, w, 16), "Kerbal Konstructs not found.", AvionicsDraw.Label, AvionicsDraw.Unknown); GUI.DragWindow(); return; }
                 if (sites == null || Time.time > nextSites) { sites = KKBridge.Sites(); nextSites = Time.time + 5f; }
-                scroll = GUI.BeginScrollView(new Rect(8, y, w, rect.height - y - 8), scroll, new Rect(0, 0, w - 18, sites.Count * 24));
+                float listH = selectedBase != null ? 150 : rect.height - y - 8;
+                scroll = GUI.BeginScrollView(new Rect(8, y, w, listH), scroll, new Rect(0, 0, w - 18, sites.Count * 24));
                 for (int i = 0; i < sites.Count; i++)
                 {
                     var s = sites[i];
@@ -352,7 +408,8 @@ namespace BDArmory.Avionics
                     var f = b != null ? FactionsScenario.FactionByName(b.faction) : null;
                     float yy = i * 24;
                     if (f != null) AvionicsDraw.FilledRect(new Rect(0, yy + 3, 10, 14), f.colour);
-                    AvionicsDraw.ColorLabel(new Rect(16, yy + 3, 230, 16), s.name, AvionicsDraw.Label, b != null ? AvionicsDraw.HudText : AvionicsDraw.ScopeText);
+                    if (b != null && GUI.Button(new Rect(14, yy, 232, 20), "", GUIStyle.none)) selectedBase = selectedBase == b ? null : b;
+                    AvionicsDraw.ColorLabel(new Rect(16, yy + 3, 230, 16), $"{s.name}{(b != null ? $"  {b.health:F0}%" : "")}", AvionicsDraw.Label, b == selectedBase && b != null ? AvionicsDraw.LockBox : b != null ? AvionicsDraw.HudText : AvionicsDraw.ScopeText);
                     AvionicsDraw.ColorLabel(new Rect(250, yy + 4, 120, 16), $"{s.category}{(s.length > 0 ? $" {s.length:F0} m" : "")}{(b != null && b.hasRunway ? " RWY" : "")}", AvionicsDraw.LabelSmall, AvionicsDraw.ScopeText);
                     if (GUI.Button(new Rect(w - 160, yy, 140, 20), f != null ? f.name : "unowned", f != null ? sel : btn))
                     {
@@ -363,6 +420,9 @@ namespace BDArmory.Avionics
                     }
                 }
                 GUI.EndScrollView();
+                if (selectedBase != null && !sc.bases.Contains(selectedBase)) selectedBase = null;
+                if (selectedBase != null) BaseLogistics.DrawBase(new Rect(8, y + listH + 6, w, rect.height - y - listH - 14), selectedBase);
+                else AvionicsDraw.ColorLabel(new Rect(8, rect.height - 22, w, 16), "Click an owned base's name for its stock, aircraft and damage.", AvionicsDraw.LabelSmall, AvionicsDraw.ScopeText);
             }
             GUI.DragWindow(new Rect(0, 0, rect.width - 22, 20));
         }

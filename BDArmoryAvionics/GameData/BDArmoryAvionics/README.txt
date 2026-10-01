@@ -67,6 +67,20 @@ track lists "Strike with LM-n" for every flying munition. A unit carrying muniti
 (click map)": it releases the next munition (its decoupler) and sends it to that point.
 Its kills go to the launcher's crew records (kill.LM). Keys can be changed in Avionics.cfg.
 
+Factions & bases (needs Kerbal Konstructs; KerbinSide bases)
+-----------------------------------------------------------
+Theatre window (Space Center toolbar, or "Theatre" in the flight menu). Factions = BDArmory teams (name, team,
+Player/AI, colour). Default: Blue Force (team A: KSC, Kerman Atoll) vs Red Force (team B, AI: Kojave Sands,
+Baikerbanur). Bases tab: click a site's owner button to cycle owner; click an owned base's name for its details.
+- Craft launched from a base join its owner's team. Base runways are measured when first loaded and used for autoland.
+- Aircraft: station craft files at a base (authorized / available). Launching one takes an airframe, recovering it
+  at a base returns it, losses are counted, replacements arrive one per 2 days (half rate when damaged).
+- Fuel and ordnance: land and stop 10 s at a friendly base to refuel and re-load gun/rocket ammo from base stock
+  (stock regrows daily). Missiles are not reloaded.
+- Damage: BDArmory explosions within 1.5 km hurt the base (by warhead size); bombs/missiles (5 kg+) within 60 m of
+  the runway close it for hours. Health repairs 25 %/day. Below 60 % Damaged, at 0 Destroyed (no runway, no service).
+- Capture: armed enemy ground units at the base for 60 s with no armed defenders within 1.5 km take it.
+
 Kill log and after-action report
 --------------------------------
 Every BDArmory hit (guns, rockets, missiles, nukes, fire, rams) is credited to the craft that caused it. A craft is
