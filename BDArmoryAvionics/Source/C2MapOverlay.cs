@@ -111,6 +111,14 @@ namespace BDArmory.Avionics
                         prev = p;
                     }
                 }
+                if (FactionsScenario.Instance != null)
+                    foreach (var fb in FactionsScenario.Instance.bases)
+                    {
+                        if (!ToScreen(body.GetWorldSurfacePosition(fb.lat, fb.lon, fb.alt), out var bp)) continue;
+                        var fac = FactionsScenario.FactionByName(fb.faction);
+                        var bc = fac != null ? fac.colour : AvionicsDraw.Neutral;
+                        AvionicsDraw.Box(bp, 9, 2.5f, bc); AvionicsDraw.Box(bp, 4, 2f, bc);
+                    }
                 foreach (var (p, n) in nodeScreen) C2UI.NodeSymbol(p, n, C2UI.SelectedUnit == n.vessel);
                 foreach (var (p, lm) in lmScreen)
                 {
@@ -129,6 +137,13 @@ namespace BDArmory.Avionics
             {
                 foreach (var (p, n) in nodeScreen) AvionicsDraw.ShadowLabel(new Rect(p.x + 10, p.y - 7, 160, 14), n.Name, AvionicsDraw.LabelSmall, n.connected ? AvionicsDraw.HudText : AvionicsDraw.Neutral);
                 foreach (var (p, t) in trackScreen) AvionicsDraw.ShadowLabel(new Rect(p.x + 10, p.y - 7, 80, 14), t.Label, AvionicsDraw.LabelSmall, C2UI.TrackColor(t));
+                if (FactionsScenario.Instance != null)
+                    foreach (var fb in FactionsScenario.Instance.bases)
+                        if (ToScreen(body.GetWorldSurfacePosition(fb.lat, fb.lon, fb.alt), out var bp))
+                        {
+                            var fac = FactionsScenario.FactionByName(fb.faction);
+                            AvionicsDraw.ShadowLabel(new Rect(bp.x + 12, bp.y - 7, 200, 14), $"{(fb.site == "Runway" ? "KSC" : fb.site)} ({fac?.name ?? "unowned"})", AvionicsDraw.LabelSmall, fac != null ? fac.colour : AvionicsDraw.Neutral);
+                        }
                 foreach (var (p, lm) in lmScreen) AvionicsDraw.ShadowLabel(new Rect(p.x + 10, p.y - 7, 160, 14), $"{lm.Label} {lm.state}", AvionicsDraw.LabelSmall, C2UI.MunitionColor);
             }
 

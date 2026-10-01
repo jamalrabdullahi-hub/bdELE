@@ -235,6 +235,20 @@ namespace BDArmory.Avionics
                     labels.Add((p + new Vector2(9, -7), n.Name, n.connected ? AvionicsDraw.HudText : AvionicsDraw.Neutral));
                 }
 
+                // Faction bases
+                if (FactionsScenario.Instance != null)
+                    foreach (var fb in FactionsScenario.Instance.bases)
+                    {
+                        var bp = ToMap(m, body, fb.lat, fb.lon);
+                        if (!In(m, bp)) continue;
+                        var fac = FactionsScenario.FactionByName(fb.faction);
+                        var bc = fac != null ? fac.colour : AvionicsDraw.Neutral;
+                        AvionicsDraw.Box(bp, 9, 2.5f, bc);
+                        AvionicsDraw.Box(bp, 4, 2f, bc);
+                        if (fb.hasRunway) AvionicsDraw.Line(ToMap(m, body, fb.latA, fb.lonA), ToMap(m, body, fb.latB, fb.lonB), 3f, bc * 0.8f);
+                        labels.Add((bp + new Vector2(12, 2), fb.site == "Runway" ? "KSC" : fb.site, bc));
+                    }
+
                 // Loitering munitions: loiter ring, line to target, symbol
                 foreach (var lm in LoiteringMunitions.Flying(net.team))
                 {

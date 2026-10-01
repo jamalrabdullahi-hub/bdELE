@@ -32,6 +32,7 @@ namespace BDArmory.Avionics
             var list = new List<Runway>();
             if (body == FlightGlobals.GetHomeBody())
                 list.Add(new Runway { name = "KSC", body = body, latA = -0.0486, lonA = -74.7247, latB = -0.0502, lonB = -74.4910 });
+            list.AddRange(FactionsScenario.RunwaysFor(body, team)); // faction bases (Kerbal Konstructs runways)
             if (team != null)
             {
                 var gps = BDATargetManager.GPSTargetList(team);

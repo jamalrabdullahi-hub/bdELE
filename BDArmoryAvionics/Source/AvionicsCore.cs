@@ -202,7 +202,8 @@ namespace BDArmory.Avionics
             C4ISRSettings.GlobalC2 = GUI.Toggle(new Rect(8, y, hw, 20), C4ISRSettings.GlobalC2, "Global C2", C4ISRSettings.GlobalC2 ? sel : btn);
             C4ISRSettings.ShowSettings = GUI.Toggle(new Rect(12 + hw, y, hw, 20), C4ISRSettings.ShowSettings, "Settings", C4ISRSettings.ShowSettings ? sel : btn); y += 22;
             AvionicsSettings.ShowEW = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.ShowEW, $"Electronic warfare · stealth {StealthRCS.ModeNames[AvionicsSettings.StealthModel]}", AvionicsSettings.ShowEW ? sel : btn); y += 22;
-            AvionicsSettings.ShowLM = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.ShowLM, "Loitering munitions", AvionicsSettings.ShowLM ? sel : btn); y += 24;
+            AvionicsSettings.ShowLM = GUI.Toggle(new Rect(8, y, hw, 20), AvionicsSettings.ShowLM, "Loitering munitions", AvionicsSettings.ShowLM ? sel : btn);
+            TheatreWindow.Show = GUI.Toggle(new Rect(12 + hw, y, hw, 20), TheatreWindow.Show, "Theatre", TheatreWindow.Show ? sel : btn); y += 24;
             var net = DataLinkNetwork.PlayerNetwork;
             var iads = net != null ? IADSController.For(net.team) : null;
             int engaged = 0;
