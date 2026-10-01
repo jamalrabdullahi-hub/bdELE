@@ -9,8 +9,8 @@ using BDArmory.Radar;
 using BDArmory.Targeting;
 
 [assembly: KSPAssembly("BDArmoryAvionics", 0, 3)]
-[assembly: KSPAssemblyDependency("BDArmory", 1, 13)]
-[assembly: KSPAssemblyDependency("0Harmony", 2, 0)]
+[assembly: KSPAssemblyDependency("BDArmory", 1, 0)]   // BDArmory registers itself as V1.0.0
+[assembly: KSPAssemblyDependency("HarmonyKSP", 1, 0)] // the 000_Harmony package registers as HarmonyKSP
 
 namespace BDArmory.Avionics
 {
