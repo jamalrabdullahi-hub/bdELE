@@ -53,6 +53,7 @@ namespace BDArmory.Avionics
         public float ordnance = 500f, ordnanceCap = 500f;
         public double lastDailyUT = -1;
         public readonly List<InvItem> inventory = new();
+        public readonly List<DefSite> defenses = new();   // SAM sites (craft spawned on the ground around the base)
         public float captureProgress;               // runtime: seconds an enemy has held it
         public string capturer;
 
@@ -73,6 +74,7 @@ namespace BDArmory.Avionics
             n.AddValue("fuel", fuel.ToString("R", ci)); n.AddValue("fuelCap", fuelCap.ToString("R", ci));
             n.AddValue("ordnance", ordnance.ToString("R", ci)); n.AddValue("ordnanceCap", ordnanceCap.ToString("R", ci));
             n.AddValue("lastDailyUT", lastDailyUT.ToString("R", ci));
+            foreach (var d in defenses) { var c = n.AddNode("SAMSITE"); c.AddValue("craft", d.craft); c.AddValue("path", d.path ?? ""); c.AddValue("alive", d.alive); }
             foreach (var i in inventory) { var c = n.AddNode("AIRCRAFT"); c.AddValue("craft", i.craft); c.AddValue("authorized", i.authorized); c.AddValue("available", i.available); c.AddValue("lost", i.lost); c.AddValue("path", i.path ?? ""); c.AddValue("role", i.role); }
         }
 
@@ -92,6 +94,12 @@ namespace BDArmory.Avionics
             if (float.TryParse(n.GetValue("ordnance"), st, ci, out float o)) b.ordnance = o;
             if (float.TryParse(n.GetValue("ordnanceCap"), st, ci, out float oc)) b.ordnanceCap = oc;
             if (!double.TryParse(n.GetValue("lastDailyUT"), st, ci, out b.lastDailyUT)) b.lastDailyUT = -1;
+            foreach (var c in n.GetNodes("SAMSITE"))
+            {
+                var d = new DefSite { craft = c.GetValue("craft") ?? "", path = c.GetValue("path") ?? "" };
+                if (!bool.TryParse(c.GetValue("alive"), out d.alive)) d.alive = true;
+                b.defenses.Add(d);
+            }
             foreach (var c in n.GetNodes("AIRCRAFT"))
             {
                 var i = new InvItem { craft = c.GetValue("craft") ?? "", path = c.GetValue("path") ?? "" };
@@ -166,13 +174,40 @@ namespace BDArmory.Avionics
             return list;
         }
 
-        /// <summary>Runway ends from the spawned runway model: its longest horizontal mesh axis.</summary>
+        static MethodInfo allStatics;
+
+        /// <summary>Runway ends: the site's own model, or else the longest runway model within 4 km of it
+        /// (some KerbinSide sites spawn aircraft from a small marker beside the runway).</summary>
         public static bool RunwayEnds(Site s, out double latA, out double lonA, out double latB, out double lonB)
         {
             latA = lonA = latB = lonB = 0;
-            if (s.instance == null || fGo == null || s.body == null) return false;
-            var go = fGo.GetValue(s.instance) as GameObject;
-            var t = fTransform?.GetValue(s.instance) as Transform ?? go?.transform;
+            if (s.body == null) return false;
+            if (s.instance != null && Measure(s.instance, s.body, out latA, out lonA, out latB, out lonB, out float len0) && len0 >= 1000) return true;
+            try
+            {
+                if (allStatics == null)
+                    foreach (var a in AssemblyLoader.loadedAssemblies)
+                        if (a.name == "KerbalKonstructs") allStatics = a.assembly.GetType("KerbalKonstructs.Core.StaticDatabase")?.GetMethod("GetAllStatics", BindingFlags.Public | BindingFlags.Static);
+                if (allStatics?.Invoke(null, null) is not IEnumerable statics) return false;
+                var site = s.body.GetWorldSurfacePosition(s.lat, s.lon, s.alt);
+                float best = 0;
+                foreach (var inst in statics)
+                {
+                    var go = fGo?.GetValue(inst) as GameObject;
+                    if (go == null || !go.activeInHierarchy || (go.transform.position - (Vector3)site).magnitude > 4000) continue;
+                    if (Measure(inst, s.body, out double a1, out double o1, out double a2, out double o2, out float len) && len > best && len >= 1000)
+                    { best = len; latA = a1; lonA = o1; latB = a2; lonB = o2; }
+                }
+                return best > 0;
+            }
+            catch (Exception e) { Debug.LogWarning($"[BDArmoryAvionics]: runway search near {s.name} failed: {e.Message}"); return false; }
+        }
+
+        static bool Measure(object inst, CelestialBody body, out double latA, out double lonA, out double latB, out double lonB, out float len)
+        {
+            latA = lonA = latB = lonB = 0; len = 0;
+            var go = fGo?.GetValue(inst) as GameObject;
+            var t = fTransform?.GetValue(inst) as Transform ?? go?.transform;
             if (go == null || t == null || !go.activeInHierarchy) return false;
             Vector3 min = Vector3.positiveInfinity, max = Vector3.negativeInfinity;
             int n = 0;
@@ -190,13 +225,14 @@ namespace BDArmory.Avionics
             if (n == 0) return false;
             var size = max - min; var mid = (min + max) / 2;
             bool alongX = size.x > size.z;
-            float len = alongX ? size.x : size.z;
-            if (len < 300) return false; // not a runway
+            len = alongX ? size.x : size.z;
+            float wid = alongX ? size.z : size.x;
+            if (len < 300 || wid > len * 0.25f) return false; // not a runway (too short, or a building/apron)
             Vector3 axis = alongX ? Vector3.right : Vector3.forward;
             var a = t.TransformPoint(mid - axis * len * 0.45f);
             var bb = t.TransformPoint(mid + axis * len * 0.45f);
-            latA = s.body.GetLatitude(a); lonA = s.body.GetLongitude(a);
-            latB = s.body.GetLatitude(bb); lonB = s.body.GetLongitude(bb);
+            latA = body.GetLatitude(a); lonA = body.GetLongitude(a);
+            latB = body.GetLatitude(bb); lonB = body.GetLongitude(bb);
             return true;
         }
     }
@@ -213,6 +249,8 @@ namespace BDArmory.Avionics
         public readonly List<string> theatreLog = new();
         public int nextFlightId;
         bool seeded;
+        int seedVersion;
+        const int CurrentSeed = 2;
 
         public override void OnAwake() => Instance = this;
         void OnDestroy() { if (Instance == this) Instance = null; }
@@ -224,6 +262,7 @@ namespace BDArmory.Avionics
         public override void OnSave(ConfigNode node)
         {
             node.AddValue("seeded", seeded);
+            node.AddValue("seedVersion", seedVersion);
             foreach (var f in factions) f.Save(node.AddNode("FACTION"));
             foreach (var b in bases) b.Save(node.AddNode("BASE"));
             node.AddValue("nextFlightId", nextFlightId);
@@ -236,6 +275,7 @@ namespace BDArmory.Avionics
         {
             factions.Clear(); bases.Clear();
             bool.TryParse(node.GetValue("seeded"), out seeded);
+            int.TryParse(node.GetValue("seedVersion"), out seedVersion);
             foreach (var n in node.GetNodes("FACTION")) factions.Add(Faction.Load(n));
             foreach (var n in node.GetNodes("BASE")) bases.Add(Base.Load(n));
             flights.Clear(); commanders.Clear(); theatreLog.Clear();
@@ -261,7 +301,9 @@ namespace BDArmory.Avionics
             try { AICommander.Tick(); } catch (Exception e) { Debug.LogWarning($"[BDArmoryAvionics]: AI commander: {e}"); }
         }
 
-        /// <summary>First run: Blue (player, team A) holds KSC and Kerman Atoll; Red (AI, team B) holds Kojave Sands and Baikerbanur.</summary>
+        /// <summary>Theatre (seed 2, the close one): Blue (player, team A) holds KSC and Kola Island (50 km);
+        /// Red (AI, team B) holds Cape Kerman (276 km north) and Kerman Atoll (390 km south).
+        /// Saves from seed 1 are moved over: bases whose KerbinSide site is gone are dropped, owners re-assigned.</summary>
         IEnumerator SeedWhenReady()
         {
             yield return new WaitForSeconds(2f);
@@ -270,13 +312,24 @@ namespace BDArmory.Avionics
                 factions.Add(new Faction { name = "Blue Force", team = "A", controller = "Player", colour = new Color(0.36f, 0.6f, 1f) });
                 factions.Add(new Faction { name = "Red Force", team = "B", controller = "AI", colour = new Color(1f, 0.35f, 0.3f) });
             }
-            if (!seeded && KKBridge.Available)
+            var sites = KKBridge.Available ? KKBridge.Sites() : new List<KKBridge.Site>();
+            if (seedVersion < CurrentSeed && sites.Count > 0)
             {
-                var plan = new Dictionary<string, string> { ["Runway"] = "Blue Force", ["KSC"] = "Blue Force", ["Kerman Atoll"] = "Blue Force", ["Kojave Sands"] = "Red Force", ["Baikerbanur Runway"] = "Red Force" };
-                foreach (var s in KKBridge.Sites())
-                    if (s.name != null && plan.TryGetValue(s.name, out var fac) && BaseAt(s.name) == null) bases.Add(FromSite(s, fac));
-                seeded = bases.Count > 0;
-                Debug.Log($"[BDArmoryAvionics]: factions seeded: {string.Join(", ", bases.ConvertAll(b => $"{b.site} ({b.faction})"))}");
+                var blue = factions.Find(f => f.IsPlayer)?.name ?? "Blue Force";
+                var red = factions.Find(f => !f.IsPlayer)?.name ?? "Red Force";
+                var plan = new Dictionary<string, string> { ["Runway"] = blue, ["KSC"] = blue, ["Kola Island"] = blue, ["Cape Kerman"] = red, ["Kerman Atoll"] = red };
+                var dropped = bases.FindAll(b => !sites.Exists(s => s.name == b.site));
+                foreach (var b in dropped) bases.Remove(b);
+                foreach (var fl in flights) if (dropped.Exists(b => b.site == fl.fromBase)) fl.state = FlightState.Done;
+                foreach (var s in sites)
+                {
+                    if (s.name == null || !plan.TryGetValue(s.name, out var fac)) continue;
+                    var b = BaseAt(s.name);
+                    if (b == null) bases.Add(FromSite(s, fac));
+                    else if (b.faction != fac) { b.faction = fac; b.inventory.Clear(); b.defenses.Clear(); b.health = 100; b.status = BaseStatus.Operational; }
+                }
+                seeded = true; seedVersion = CurrentSeed;
+                Debug.Log($"[BDArmoryAvionics]: theatre (seed {CurrentSeed}): {string.Join(", ", bases.ConvertAll(b => $"{b.site} ({b.faction})"))}{(dropped.Count > 0 ? $"; dropped {string.Join(", ", dropped.ConvertAll(b => b.site))}" : "")}");
             }
             RefreshFromKK();
         }

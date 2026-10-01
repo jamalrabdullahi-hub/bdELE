@@ -70,8 +70,8 @@ Its kills go to the launcher's crew records (kill.LM). Keys can be changed in Av
 Factions & bases (needs Kerbal Konstructs; KerbinSide bases)
 -----------------------------------------------------------
 Theatre window (Space Center toolbar, or "Theatre" in the flight menu). Factions = BDArmory teams (name, team,
-Player/AI, colour). Default: Blue Force (team A: KSC, Kerman Atoll) vs Red Force (team B, AI: Kojave Sands,
-Baikerbanur). Bases tab: click a site's owner button to cycle owner; click an owned base's name for its details.
+Player/AI, colour). Default: Blue Force (team A: KSC, Kola Island 50 km off KSC) vs Red Force (team B, AI: Cape Kerman 276 km
+north, Kerman Atoll 390 km south). Older saves are moved over to this theatre automatically. Bases tab: click a site's owner button to cycle owner; click an owned base's name for its details.
 - Craft launched from a base join its owner's team. Base runways are measured when first loaded and used for autoland.
 - Aircraft: station craft files at a base (authorized / available). Launching one takes an airframe, recovering it
   at a base returns it, losses are counted, replacements arrive one per 2 days (half rate when damaged).
@@ -80,6 +80,10 @@ Baikerbanur). Bases tab: click a site's owner button to cycle owner; click an ow
 - Damage: BDArmory explosions within 1.5 km hurt the base (by warhead size); bombs/missiles (5 kg+) within 60 m of
   the runway close it for hours. Health repairs 25 %/day. Below 60 % Damaged, at 0 Destroyed (no runway, no service).
 - Capture: armed enemy ground units at the base for 60 s with no armed defenders within 1.5 km take it.
+- Air defence: every base gets 3 SAM sites from your SAM craft (weapon manager + 2+ missiles, no pilot AI).
+  Within 20 km of a base they spawn on dry land beside the runway, in guard mode on the owner's team (and IADS);
+  40 km away they stand down. Destroyed sites stay down until rebuilt (1/day). Off-screen they shoot down strikers.
+- AI factions stock their bases automatically from craft with a weapon manager + pilot AI (Re-stock button).
 - AI commander (Theatre > Commander): each AI faction plans on game time (Passive / Defensive / Normal 3 h /
   Aggressive 1 h). It sends Strike/SEAD-role aircraft from its bases at your nearest base and scrambles Fighter-role
   aircraft at your aircraft within 80 km of its bases. Give aircraft at its bases a role in the base panel.

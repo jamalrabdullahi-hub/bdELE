@@ -248,7 +248,8 @@ namespace BDArmory.Avionics
             {
                 // Base defences: stationed fighters and the base's state decide how many get through.
                 int defenders = 0; foreach (var i in target.inventory) if (i.role == "Fighter") defenders += i.available;
-                float pLoss = Mathf.Clamp01(0.12f + 0.08f * Mathf.Min(defenders, 4) + (target.status == BaseStatus.Operational ? 0.08f : 0f));
+                int sams = BaseDefense.Standing(target);
+                float pLoss = Mathf.Clamp01(0.12f + 0.08f * Mathf.Min(defenders, 4) + 0.07f * Mathf.Min(sams, 4) + (target.status == BaseStatus.Operational ? 0.08f : 0f));
                 int lost = 0;
                 for (int i = 0; i < fl.alive; i++) if (UnityEngine.Random.value < pLoss) lost++;
                 int hit = fl.alive - lost;
@@ -259,7 +260,8 @@ namespace BDArmory.Avionics
                 if (cratered) target.runwayClosedUntil = Math.Max(target.runwayClosedUntil, Planetarium.GetUniversalTime()) + UnityEngine.Random.Range(2f, 6f) * 3600;
                 BaseLogistics.UpdateStatus(target);
                 Lose(fl, lost);
-                Log($"{fl.Callsign} struck {BaseLogistics.Name(target)}: {hit} got through, {lost} shot down, base -{dmg:F0}% ({target.health:F0}%){(cratered ? ", runway cratered" : "")}");
+                if (lost > 0 && sams > 0 && UnityEngine.Random.value < 0.25f) { var dead = target.defenses.Find(d => d.alive); if (dead != null) dead.alive = false; } // strikers sometimes take a site with them
+                Log($"{fl.Callsign} struck {BaseLogistics.Name(target)} ({sams} SAM sites): {hit} got through, {lost} shot down, base -{dmg:F0}% ({target.health:F0}%){(cratered ? ", runway cratered" : "")}");
             }
             else if (fl.mission == FlightMission.Intercept) Log($"{fl.Callsign} found nothing and is returning");
             ReturnHome(fl);
@@ -336,6 +338,16 @@ namespace BDArmory.Avionics
         static readonly FieldInfo spawned = AccessTools.Field(typeof(VesselSpawnerBase), "spawnedVessels");
 
         void Awake() { instance = this; queue.Clear(); despawning.Clear(); }
+        public static bool Busy => instance != null && instance.busy;
+
+        /// <summary>The craft BDArmory's single-vessel spawner just made (null if it failed).</summary>
+        public static Vessel LatestSpawned()
+        {
+            var sp = SingleVesselSpawning.Instance;
+            if (sp == null || !sp.vesselSpawnSuccess) return null;
+            if (latestName?.GetValue(sp) is string name && spawned?.GetValue(sp) is Dictionary<string, Vessel> dict && dict.TryGetValue(name, out var v)) return v;
+            return null;
+        }
         void OnDestroy() { if (instance == this) instance = null; }
 
         public static void Request(AirFlight fl)
@@ -348,7 +360,7 @@ namespace BDArmory.Avionics
 
         void Update()
         {
-            if (busy || queue.Count == 0 || !FlightGlobals.ready || SingleVesselSpawning.Instance == null || SingleVesselSpawning.Instance.vesselsSpawning) return;
+            if (busy || BaseDefense.Spawning || queue.Count == 0 || !FlightGlobals.ready || SingleVesselSpawning.Instance == null || SingleVesselSpawning.Instance.vesselsSpawning) return;
             StartCoroutine(Spawn(queue.Dequeue()));
         }
 

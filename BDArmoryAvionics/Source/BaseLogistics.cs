@@ -58,6 +58,7 @@ namespace BDArmory.Avionics
                 float rate = b.status == BaseStatus.Operational ? 1f : b.status == BaseStatus.Damaged ? 0.5f : 0f;
                 b.fuel = Mathf.Min(b.fuelCap, b.fuel + b.fuelCap * 0.5f * d * rate);
                 b.ordnance = Mathf.Min(b.ordnanceCap, b.ordnance + b.ordnanceCap * 0.25f * d * rate);
+                BaseDefense.Rebuild(b, d);
                 foreach (var i in b.inventory)
                 {
                     if (i.available >= i.authorized || rate <= 0) continue;
@@ -190,6 +191,7 @@ namespace BDArmory.Avionics
                         string old = b.faction;
                         b.faction = af.name; b.captureProgress = 0; b.capturer = null;
                         foreach (var i in b.inventory) i.available = 0; // the loser's aircraft are gone
+                        foreach (var ds in b.defenses) ds.alive = false; // and so are their SAM sites
                         ScreenMessages.PostScreenMessage($"{Name(b)} CAPTURED by {af.name}", 6f, ScreenMessageStyle.UPPER_CENTER);
                         CombatLog.Note($"{Name(b)} captured by {af.name} from {old}", true, 1);
                         Debug.Log($"[BDArmoryAvionics]: base {b.site} captured by {af.name} from {old}");
@@ -391,6 +393,9 @@ namespace BDArmory.Avionics
             if (b.captureProgress > 0) { AvionicsDraw.ColorLabel(new Rect(x, y, w, 14), $"Being captured by {b.capturer}: {b.captureProgress / CaptureSeconds:P0}", small, AvionicsDraw.Hostile); y += 14; }
             y += 4;
 
+            AvionicsDraw.ColorLabel(new Rect(x, y + 2, w - 130, 14), b.defenses.Count == 0 ? "AIR DEFENCE: none (no SAM craft, or press Re-stock)" : $"AIR DEFENCE: {BaseDefense.Standing(b)}/{b.defenses.Count} SAM sites up  ({string.Join(", ", b.defenses.ConvertAll(d => d.craft + (d.alive ? "" : " X")))})", small, BaseDefense.Standing(b) > 0 ? AvionicsDraw.Friendly : AvionicsDraw.Unknown);
+            if (GUI.Button(new Rect(x + w - 124, y, 124, 18), "Re-stock SAMs", btn)) { b.defenses.Clear(); BaseDefense.AutoStock(); }
+            y += 20;
             AvionicsDraw.ColorLabel(new Rect(x, y, w, 14), "AIRCRAFT (available / authorized, lost)", AvionicsDraw.Header, AvionicsDraw.HudText); y += 16;
             for (int i = 0; i < b.inventory.Count; i++)
             {
