@@ -1,7 +1,18 @@
-BDArmory Avionics & C4ISR
-=========================
+BD Armory: Enhanced Lethality Edition
+=====================================
+(avionics, C4ISR, IADS, air operations and combat operators for BDArmory; folder/DLL: BDArmoryAvionics)
 A separate add-on for BDArmory 1.13.1.0 (KSP 1.12.5). BDArmory itself stays unmodified;
 this mod hooks into it at runtime with Harmony.
+
+Combat Operators
+----------------
+Open the Astronaut Complex: a Combat Operators panel lists every kerbal with five disciplines (0-5):
+Pilot (steering, G tolerance, missile evasion), Gunnery (gun spread), Weapons (radar scan/lock speed),
+Sensors/EW (target acquisition, countermeasure timing), Command (IADS reaction, from a crewed HQ/AWACS/EWR).
+Level 2 = stock BDArmory; drones count as 2. New hires start at 1, the original four at 2.
+Train: days of game time (longer for dimmer kerbals), funds in career; the kerbal is unavailable meanwhile.
+Combat XP: time in guard-mode combat, kills credited to the craft's target, recovered sorties.
+The best qualified crew member aboard sets each skill. Toggle: "Combat operators" in the menu.
 
 Requires: BDArmory, Harmony (000_Harmony), ModuleManager.
 Optional: SCANsat (scanned-coverage maps).

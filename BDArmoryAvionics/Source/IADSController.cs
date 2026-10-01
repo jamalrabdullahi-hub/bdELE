@@ -47,6 +47,7 @@ namespace BDArmory.Avionics
             public readonly Dictionary<Vessel, Site> sites = new();
             public readonly Dictionary<NetTrack, float> threat = new();
             public readonly List<string> log = new();
+            public float nextUpdate;
             public void Log(string s)
             {
                 log.Insert(0, $"{KSPUtil.PrintTimeCompact(Planetarium.GetUniversalTime(), false)}  {s}");
@@ -88,11 +89,14 @@ namespace BDArmory.Avionics
         {
             if (!HighLogic.LoadedSceneIsFlight || !FlightGlobals.ready) return;
             if (Time.time < nextUpdate) return;
-            nextUpdate = Time.time + UpdateInterval;
+            nextUpdate = Time.time + 0.1f;
 
             foreach (var net in DataLinkNetwork.Networks.Values)
             {
                 if (!Teams.TryGetValue(net.team, out var iads)) Teams[net.team] = iads = new TeamIADS { team = net.team };
+                // Each team reacts at its own pace: a skilled commander on a crewed HQ / AWACS / EWR speeds it up.
+                if (Time.time < iads.nextUpdate) continue;
+                iads.nextUpdate = Time.time + UpdateInterval * OperatorEffects.CommandReaction(net.team);
                 if (!Controls(net.team))
                 {
                     foreach (var s in iads.sites.Values) Release(s);

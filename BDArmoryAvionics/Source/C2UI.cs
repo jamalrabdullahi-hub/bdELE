@@ -106,7 +106,10 @@ namespace BDArmory.Avionics
             string link = !n.LinkEnabled ? "link off" : !n.connected ? "NO LINK" : n.path == LinkPath.Global ? "global C2" : n.path == LinkPath.Relay ? $"relay, {n.hops} hops" : "direct";
             AvionicsDraw.ColorLabel(new Rect(x, y, w, 14), $"{n.role} · {link} · {AvionicsDraw.FormatAlt(n.vessel.altitude)}", AvionicsDraw.LabelSmall, n.connected ? AvionicsDraw.ScopeText : LinkLost); y += 14;
             AvionicsDraw.ColorLabel(new Rect(x, y, w, 14), $"Missiles {n.readyMissiles}  ·  {(n.hasRadar ? (n.radarOn ? "radar ON" : "radar off") : "no radar")}", AvionicsDraw.LabelSmall, AvionicsDraw.ScopeText); y += 14;
-            AvionicsDraw.ColorLabel(new Rect(x, y, w, 14), $"Task: {C2Tasking.TaskString(n.vessel)}", AvionicsDraw.LabelSmall, AvionicsDraw.Friendly); y += 18;
+            AvionicsDraw.ColorLabel(new Rect(x, y, w, 14), $"Task: {C2Tasking.TaskString(n.vessel)}", AvionicsDraw.LabelSmall, AvionicsDraw.Friendly); y += 14;
+            if (AvionicsSettings.CombatOperators)
+            { AvionicsDraw.ColorLabel(new Rect(x, y, w, 14), $"Crew: {OperatorEffects.CrewSummary(n.vessel)}", AvionicsDraw.LabelSmall, AvionicsDraw.ScopeText); y += 14; }
+            y += 4;
 
             var v = n.vessel;
             if (n.IsAir || n.role == NodeRole.Ship || n.role == NodeRole.Ground)
