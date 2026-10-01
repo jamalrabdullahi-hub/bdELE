@@ -234,7 +234,11 @@ namespace BDArmory.Avionics
 
         void Drive(Group g)
         {
-            if (g.vessel == null || g.aimTransform == null || g.joints.Count == 0) return;
+            if (g.vessel == null || g.joints.Count == 0) return;
+            // The missile we were aiming with has launched (or the gun/camera was shot off): aim with the next one on the rack.
+            if (g.aimTransform == null || (g.missile != null && (g.missile.HasFired || g.missile.vessel != g.vessel)) || (g.weapon != null && g.weapon.vessel != g.vessel))
+                FindAimReference(g);
+            if (g.aimTransform == null) return;
             var settings = g.joints[0].module;
             bool haveTarget = TryGetAimPoint(g, settings.source, out Vector3 aimPoint, out string what);
 
