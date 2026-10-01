@@ -101,6 +101,18 @@ Ejecting (P-P or auto-eject) from a combat craft reports the pilot to C2: a GPS 
 - Captured pilots are POWs (missing, unavailable) held at the nearest enemy base; capturing that base frees them.
 - Records: ejections, rescued, POW, freed, rescues made; medals Rescue Medal, Angel (5 rescues), Evader, POW Medal.
 
+VTOL flight assist
+------------------
+Command parts get a "VTOL assist" part-menu section: set it Available, plus max hover speed, max tilt, attitude
+response, damping, and (optional) the action group that tilts your nacelles to hover. Works whenever the
+engines' thrust points mostly up (tiltrotor in hover mode, helicopter, lift jets).
+  Keypad 7  hover hold on/off: holds altitude and position, levels the craft. W/S fly forward/back, Q/E slide
+            sideways, A/D turn, Shift/Ctrl climb/descend - let go and it stops and holds where it is.
+  Keypad 9  auto-land: descends gently, cuts the throttle on touchdown.
+BDArmory's pilot AI is paused while the assist flies and resumes when it's switched off in the air.
+CSAR "Send": a VTOL unit flies there with the AI, fires its hover action group 3 km out, hovers in and lands
+within 25 m of the survivor, who then climbs aboard.
+
 Kill log and after-action report
 --------------------------------
 Every BDArmory hit (guns, rockets, missiles, nukes, fire, rams) is credited to the craft that caused it. A craft is

@@ -168,10 +168,29 @@ namespace BDArmory.Avionics
         }
 
         readonly Dictionary<string, float> captureContact = new();
+        public readonly Dictionary<uint, string> pickups = new(); // unit -> survivor, VTOL handover pending
+
+        void HandOver()
+        {
+            foreach (var kv in new List<KeyValuePair<uint, string>>(pickups))
+            {
+                var s = Find(kv.Value);
+                var v = FindVessel(kv.Key);
+                if (s == null || s.status != SurvivorStatus.Down || v == null || !v.loaded) { pickups.Remove(kv.Key); continue; }
+                if ((v.CoMD - v.mainBody.GetWorldSurfacePosition(s.lat, s.lon, s.alt)).magnitude > 3000) continue;
+                var vtol = ModuleVTOLAssist.For(v);
+                pickups.Remove(kv.Key);
+                if (vtol == null) continue;
+                C2Tasking.Release(v);
+                vtol.GoTo(s.lat, s.lon, 30, land: true);
+                AICommander.Log($"{v.GetName()} on scene: VTOL pickup of {s.kerbal}");
+            }
+        }
 
         void Tick()
         {
             double ut = Planetarium.GetUniversalTime();
+            if (HighLogic.LoadedSceneIsFlight) HandOver();
             foreach (var s in survivors.ToArray())
             {
                 if (s.status != SurvivorStatus.Down) { if (s.status == SurvivorStatus.PickedUp) CheckDelivered(s); continue; }
@@ -397,8 +416,18 @@ namespace BDArmory.Avionics
             if (unit == null || s == null) return;
             var body = unit.mainBody;
             double ground = Math.Max(0, body.TerrainAltitude(s.lat, s.lon));
-            C2Tasking.MoveTo(unit, new Vector3d(s.lat, s.lon, ground + 300));
-            ScreenMessages.PostScreenMessage($"{unit.GetName()} tasked: CSAR {s.kerbal}. Land or hover within 60 m and they climb in", 5f, ScreenMessageStyle.UPPER_CENTER);
+            var vtol = ModuleVTOLAssist.For(unit);
+            if (vtol != null && (unit.srfSpeed < 40 || vtol.hoverAG != "None") && (unit.CoMD - body.GetWorldSurfacePosition(s.lat, s.lon, ground)).magnitude < 3000)
+            {
+                vtol.GoTo(s.lat, s.lon, 30, land: true);
+                ScreenMessages.PostScreenMessage($"{unit.GetName()}: VTOL pickup of {s.kerbal} - hovering in to land beside them", 5f, ScreenMessageStyle.UPPER_CENTER);
+            }
+            else
+            {
+                C2Tasking.MoveTo(unit, new Vector3d(s.lat, s.lon, ground + 300));
+                if (vtol != null && Instance != null) Instance.pickups[unit.persistentId] = s.kerbal; // hand over to the VTOL assist 3 km out
+                ScreenMessages.PostScreenMessage($"{unit.GetName()} tasked: CSAR {s.kerbal}.{(vtol != null ? " It converts to hover and lands beside them 3 km out." : " Land or hover within 60 m and they climb in.")}", 5f, ScreenMessageStyle.UPPER_CENTER);
+            }
             Debug.Log($"[BDArmoryAvionics]: CSAR: {unit.GetName()} sent to {s.kerbal}");
         }
     }
