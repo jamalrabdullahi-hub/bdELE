@@ -48,6 +48,10 @@ namespace BDArmory.Avionics
         public static bool Radar3DShowIRST = true;
         public static bool Radar3DShowTeam = true;
         public static bool Radar3DShowDebris = true;
+
+        // Pilot AI formation keeping
+        public static bool FormationAssist = true;
+        public static float FormationMaxBank = 30f; // degrees of bank allowed for sideways slot corrections
         public static bool WorldContactMarkers = false;
 
         // Target list
@@ -118,6 +122,8 @@ namespace BDArmory.Avionics
                 Radar3DShowIRST = GetBool(node, "Radar3DShowIRST", Radar3DShowIRST);
                 Radar3DShowTeam = GetBool(node, "Radar3DShowTeam", Radar3DShowTeam);
                 Radar3DShowDebris = GetBool(node, "Radar3DShowDebris", Radar3DShowDebris);
+                FormationAssist = GetBool(node, "FormationAssist", FormationAssist);
+                FormationMaxBank = Mathf.Clamp(GetFloat(node, "FormationMaxBank", FormationMaxBank), 5f, 60f);
                 WorldContactMarkers = GetBool(node, "WorldContactMarkers", WorldContactMarkers);
 
                 TargetListShowFriendlies = GetBool(node, "TargetListShowFriendlies", TargetListShowFriendlies);
@@ -182,6 +188,8 @@ namespace BDArmory.Avionics
                 node.AddValue("Radar3DShowIRST", Radar3DShowIRST);
                 node.AddValue("Radar3DShowTeam", Radar3DShowTeam);
                 node.AddValue("Radar3DShowDebris", Radar3DShowDebris);
+                node.AddValue("FormationAssist", FormationAssist);
+                node.AddValue("FormationMaxBank", FormationMaxBank);
                 node.AddValue("WorldContactMarkers", WorldContactMarkers);
 
                 node.AddValue("TargetListShowFriendlies", TargetListShowFriendlies);

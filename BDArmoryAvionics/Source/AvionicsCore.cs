@@ -35,7 +35,7 @@ namespace BDArmory.Avionics
 
         void Start()
         {
-            menuRect = new Rect(Screen.width - 300, 90, 240, 444);
+            menuRect = new Rect(Screen.width - 300, 90, 240, 466);
             radarRectIndex = GUIUtils.RegisterGUIRect(new Rect());
             listRectIndex = GUIUtils.RegisterGUIRect(new Rect());
             gpsRectIndex = GUIUtils.RegisterGUIRect(new Rect());
@@ -180,7 +180,8 @@ namespace BDArmory.Avionics
             AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), $"Ejection seat: press {AvionicsSettings.KeyEject} twice", AvionicsDraw.Header, AvionicsDraw.HudText); y += 16;
             AvionicsSettings.AutoEjectOnDestruction = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.AutoEjectOnDestruction, "Auto-eject if cockpit destroyed", AvionicsSettings.AutoEjectOnDestruction ? sel : btn); y += 22;
             AvionicsSettings.AutoEjectBeforeImpact = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.AutoEjectBeforeImpact, "Auto-eject before ground impact", AvionicsSettings.AutoEjectBeforeImpact ? sel : btn); y += 22;
-            AvionicsSettings.ThreatBanner = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.ThreatBanner, "Missile / lock warning banner", AvionicsSettings.ThreatBanner ? sel : btn); y += 26;
+            AvionicsSettings.ThreatBanner = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.ThreatBanner, "Missile / lock warning banner", AvionicsSettings.ThreatBanner ? sel : btn); y += 22;
+            AvionicsSettings.FormationAssist = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.FormationAssist, "AI formation assist", AvionicsSettings.FormationAssist ? sel : btn); y += 26;
             var small = AvionicsDraw.LabelSmall;
 
             // C4ISR
