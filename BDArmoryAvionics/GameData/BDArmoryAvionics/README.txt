@@ -28,7 +28,11 @@ Stock BDArmory shades each surface by cos(2 x angle to the radar), so facets til
 barely matters. The stealth model (menu > Electronic warfare, or the VAB/SPH C4ISR window) makes returns specular:
   Stock / Low (default) / Medium / High. Angled facets return far less, flat panels square to the radar more
   (spikes), a sphere is unchanged (BDArmory's 1 m² calibration holds), RAM / reflectivity still applies.
-  BDArmory's own RCS window in the editor shows the shaped value. Note: parts with smoothed normals look curved
+  BDArmory's own RCS window in the editor shows the shaped value.
+  VAB/SPH "Stealth & EW analysis" (button in the C4ISR craft setup window): renders the craft under all four
+  models - overall / front / side / rear / top / bottom RCS, detection and lock ranges against any radar part,
+  a polar plot (stock vs shaped, level or from +-30°), plus its jammers (jamming-on signature, garble zone,
+  lock-break, data link cut / degrade ranges), RWR / ESM capability and how far its own radar can be heard. Note: parts with smoothed normals look curved
   to the renderer, so their facets count as curved surfaces.
 EW (Electronic warfare window):
   Link jamming   enemy jammers cut or degrade data links (strength / distance², line of sight); Sensors/EW skill

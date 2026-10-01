@@ -196,7 +196,8 @@ namespace BDArmory.Avionics
                 if (GUI.Button(new Rect(i * (sw + 4), y, sw, 20), StealthRCS.ModeNames[i], AvionicsSettings.StealthModel == i ? sel : btn)) StealthRCS.SetMode(i);
             y += 22;
             Line(ref y, w, StealthRCS.ModeHelp);
-            Line(ref y, w, "Re-run BDArmory's RCS window to see the new value.");
+            if (GUI.Button(new Rect(0, y, w, 22), EditorStealthWindow.Show ? "Stealth & EW analysis (open)" : "Open stealth & EW analysis", EditorStealthWindow.Show ? sel : btn)) EditorStealthWindow.Show = !EditorStealthWindow.Show;
+            y += 26;
 
             if (fit.pilot != null)
             {
