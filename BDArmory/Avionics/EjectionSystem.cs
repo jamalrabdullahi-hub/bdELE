@@ -1,0 +1,360 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+using BDArmory.Extensions;
+using BDArmory.Utils;
+
+namespace BDArmory.Avionics
+{
+    /// <summary>
+    /// Rocket ejection seats for every crewed part.
+    /// Press the eject key twice (default P, P) to eject everyone from the active vessel.
+    /// Optionally ejects automatically when a crewed part is about to be destroyed, or just before a high-speed ground impact.
+    /// Sequence per kerbal: exit through the hatch, rocket burn away from the craft, then the EVA parachute deploys.
+    /// </summary>
+    [KSPAddon(KSPAddon.Startup.Flight, false)]
+    public class EjectionSystem : MonoBehaviour
+    {
+        public static EjectionSystem Instance;
+
+        // Tuning
+        const float DoubleTapWindow = 0.45f;   // seconds between the two key presses
+        const float InitialKick = 12f;         // m/s added at the moment of ejection
+        const float RocketAccel = 14f * 9.81f; // m/s^2 during the rocket burn (about 14 g)
+        const float RocketBurnTime = 0.4f;     // seconds
+        const float StaggerTime = 0.25f;       // seconds between crew members
+        const float ImpactWarningTime = 1.2f;  // auto-eject when ground impact is this many seconds away...
+        const float ImpactMinSinkRate = 60f;   // ...and the vessel is sinking at least this fast (m/s)
+
+        float lastTapTime = -10f;
+        readonly HashSet<ProtoCrewMember> ejecting = new();
+        readonly HashSet<Part> hooked = new();
+        readonly Dictionary<Vessel, float> lastAutoEject = new();
+        float nextHookScan = 0;
+
+        public static string LastMessage = "";
+        public static float LastMessageTime = -100f;
+        static void Message(string m)
+        {
+            LastMessage = m;
+            LastMessageTime = Time.time;
+            ScreenMessages.PostScreenMessage(m, 3f, ScreenMessageStyle.UPPER_CENTER);
+        }
+
+        void Awake()
+        {
+            if (Instance != null) { Destroy(this); return; }
+            Instance = this;
+            AvionicsSettings.Load();
+        }
+
+        void OnDestroy()
+        {
+            foreach (var p in hooked) if (p != null) p.OnJustAboutToDie -= OnCrewedPartDying(p);
+            hooked.Clear();
+            dyingHandlers.Clear();
+            if (Instance == this) Instance = null;
+        }
+
+        void Update()
+        {
+            if (!HighLogic.LoadedSceneIsFlight || !FlightGlobals.ready) return;
+            if (AvionicsSettings.KeyEject == KeyCode.None || GUIUtility.keyboardControl != 0) return;
+            if (!Input.GetKeyDown(AvionicsSettings.KeyEject)) return;
+
+            if (Time.time - lastTapTime <= DoubleTapWindow)
+            {
+                lastTapTime = -10f;
+                EjectVessel(FlightGlobals.ActiveVessel, "Ejecting!");
+            }
+            else
+            {
+                lastTapTime = Time.time;
+                var v = FlightGlobals.ActiveVessel;
+                if (v != null && !v.isEVA && v.GetCrewCount() > 0)
+                    ScreenMessages.PostScreenMessage($"Press {AvionicsSettings.KeyEject} again to eject", DoubleTapWindow + 0.3f, ScreenMessageStyle.UPPER_CENTER);
+            }
+        }
+
+        void FixedUpdate()
+        {
+            if (!HighLogic.LoadedSceneIsFlight || !FlightGlobals.ready) return;
+
+            // Keep the "about to die" hooks on every crewed part of every loaded vessel.
+            if (Time.time >= nextHookScan)
+            {
+                nextHookScan = Time.time + 1f;
+                RefreshHooks();
+            }
+
+            if (!AvionicsSettings.AutoEjectBeforeImpact) return;
+            var vessels = FlightGlobals.VesselsLoaded;
+            for (int i = 0; i < vessels.Count; i++)
+            {
+                var v = vessels[i];
+                if (v == null || v.packed || v.isEVA || v.LandedOrSplashed || v.GetCrewCount() == 0) continue;
+                double sink = -v.verticalSpeed;
+                if (sink < ImpactMinSinkRate) continue;
+                double alt = v.radarAltitude;
+                if (alt <= 0 || alt / sink > ImpactWarningTime) continue;
+                if (lastAutoEject.TryGetValue(v, out float last) && Time.time - last < 3f) continue; // crew still on their way out
+                lastAutoEject[v] = Time.time;
+                EjectVessel(v, $"{v.GetDisplayName()}: ground impact imminent, ejecting!");
+            }
+        }
+
+        // ---- Auto-eject when a crewed part is about to be destroyed ----
+
+        readonly Dictionary<Part, Callback> dyingHandlers = new();
+        Callback OnCrewedPartDying(Part p)
+        {
+            if (!dyingHandlers.TryGetValue(p, out var cb))
+            {
+                cb = () =>
+                {
+                    if (!AvionicsSettings.AutoEjectOnDestruction || p == null || p.vessel == null) return;
+                    if (p.protoModuleCrew.Count == 0) return;
+                    EjectFromPart(p, $"{p.vessel.GetDisplayName()}: {p.partInfo.title} destroyed, ejecting!");
+                };
+                dyingHandlers[p] = cb;
+            }
+            return cb;
+        }
+
+        void RefreshHooks()
+        {
+            hooked.RemoveWhere(p => p == null);
+            var vessels = FlightGlobals.VesselsLoaded;
+            for (int i = 0; i < vessels.Count; i++)
+            {
+                var v = vessels[i];
+                if (v == null || v.isEVA) continue;
+                foreach (var p in v.parts)
+                {
+                    if (p == null || p.CrewCapacity == 0 || hooked.Contains(p)) continue;
+                    p.OnJustAboutToDie += OnCrewedPartDying(p);
+                    hooked.Add(p);
+                }
+            }
+        }
+
+        // ---- Ejection ----
+
+        public void EjectVessel(Vessel v, string message)
+        {
+            if (v == null || v.isEVA) return;
+            var parts = new List<Part>();
+            foreach (var p in v.parts)
+                if (p != null && p.protoModuleCrew.Count > 0) parts.Add(p);
+            if (parts.Count == 0)
+            {
+                if (v == FlightGlobals.ActiveVessel) Message("No crew to eject");
+                return;
+            }
+            // Command seats: kerbals already on EVA sitting in an external seat
+            foreach (var seat in v.FindPartModulesImplementing<KerbalSeat>())
+                if (seat.Occupant != null) StartCoroutine(EjectFromSeat(seat));
+
+            Message(message);
+            bool focusFirst = v == FlightGlobals.ActiveVessel;
+            float delay = 0;
+            foreach (var p in parts)
+            {
+                foreach (var crew in new List<ProtoCrewMember>(p.protoModuleCrew))
+                {
+                    StartCoroutine(EjectCrew(crew, p, delay, focusFirst));
+                    focusFirst = false;
+                    delay += StaggerTime;
+                }
+            }
+        }
+
+        public void EjectFromPart(Part p, string message)
+        {
+            if (p == null) return;
+            Message(message);
+            float delay = 0;
+            // The part is about to die, so eject the first kerbal immediately and the rest as fast as possible.
+            foreach (var crew in new List<ProtoCrewMember>(p.protoModuleCrew))
+            {
+                StartCoroutine(EjectCrew(crew, p, delay, p.vessel == FlightGlobals.ActiveVessel && delay == 0));
+                delay += 0.05f;
+            }
+        }
+
+        IEnumerator EjectCrew(ProtoCrewMember crew, Part fromPart, float delay, bool focus)
+        {
+            if (crew == null || ejecting.Contains(crew)) yield break;
+            ejecting.Add(crew);
+            try
+            {
+                if (delay > 0) yield return new WaitForSeconds(delay);
+                if (fromPart == null || fromPart.vessel == null || !fromPart.protoModuleCrew.Contains(crew)) yield break;
+                if (FlightEVA.hatchInsideFairing(fromPart))
+                {
+                    Message($"{crew.name} can't eject: the hatch is inside a fairing");
+                    yield break;
+                }
+
+                Vector3 dir = EjectDirection(fromPart);
+                Vector3 craftVelocity = fromPart.vessel.Velocity();
+                Vector3 startPos = fromPart.transform.position + dir * EjectClearance(fromPart);
+                Vessel previousActive = FlightGlobals.ActiveVessel;
+                Vessel fromVessel = fromPart.vessel;
+
+                KerbalEVA eva = FlightEVA.fetch.spawnEVA(crew, fromPart, fromPart.airlock, true);
+                if (eva == null || eva.vessel == null)
+                {
+                    Message($"{crew.name} can't eject: every hatch is blocked");
+                    yield break;
+                }
+
+                // Camera: follow the first kerbal out of the player's vessel, otherwise keep the current vessel.
+                if (!focus && previousActive != null && FlightGlobals.ActiveVessel != previousActive && previousActive.loaded)
+                    FlightGlobals.ForceSetActiveVessel(previousActive);
+
+                if (crew.KerbalRef != null) crew.KerbalRef.state = Kerbal.States.BAILED_OUT;
+                if (fromVessel != null && fromVessel.GetVesselCrew().Contains(crew)) fromVessel.RemoveCrew(crew);
+                eva.autoGrabLadderOnStart = false;
+                eva.StartNonCollidePeriod(5f, 1f, fromPart, fromPart.airlock);
+                EnsureParachute(eva);
+
+                // Place the kerbal clear of the canopy, moving with the craft, then fire the seat rocket.
+                eva.vessel.SetPosition(startPos);
+                eva.vessel.SetVelocity(craftVelocity + dir * InitialKick);
+                yield return StartCoroutine(RocketBurn(eva, dir));
+                yield return StartCoroutine(DeployChute(eva));
+            }
+            finally
+            {
+                ejecting.Remove(crew);
+            }
+        }
+
+        IEnumerator EjectFromSeat(KerbalSeat seat)
+        {
+            var occupant = seat.Occupant;
+            var eva = occupant != null ? occupant.GetComponent<KerbalEVA>() : null;
+            if (eva == null) yield break;
+            Vector3 dir = EjectDirection(seat.part);
+            seat.LeaveSeat(new KSPActionParam(KSPActionGroup.Abort, KSPActionType.Activate));
+            yield return new WaitForFixedUpdate();
+            if (eva == null || eva.vessel == null) yield break;
+            EnsureParachute(eva);
+            eva.vessel.SetVelocity((Vector3)eva.vessel.Velocity() + dir * InitialKick);
+            yield return StartCoroutine(RocketBurn(eva, dir));
+            yield return StartCoroutine(DeployChute(eva));
+        }
+
+        /// <summary>
+        /// Out through the top of the canopy. KSP aircraft cockpits have their top along -transform.forward;
+        /// for pods with a side hatch the airlock direction is used instead.
+        /// </summary>
+        static Vector3 EjectDirection(Part p)
+        {
+            Vector3 up = -p.transform.forward;
+            if (p.airlock != null)
+            {
+                Vector3 toHatch = Vector3.ProjectOnPlane(p.airlock.position - p.transform.position, p.transform.up);
+                // Use the hatch side only for pods whose hatch isn't roughly on top already
+                if (toHatch.sqrMagnitude > 0.04f && Vector3.Angle(toHatch, up) > 60f) up = toHatch.normalized;
+            }
+            return up.normalized;
+        }
+
+        static float EjectClearance(Part p)
+        {
+            float r = 0;
+            foreach (var c in p.GetComponentsInChildren<Collider>())
+                if (c != null && c.enabled && !c.isTrigger) r = Mathf.Max(r, c.bounds.extents.magnitude);
+            return Mathf.Clamp(r * 0.6f, 0.8f, 3f);
+        }
+
+        IEnumerator RocketBurn(KerbalEVA eva, Vector3 dir)
+        {
+            GameObject fx = StartRocketFX(eva, dir);
+            float t = 0;
+            var wait = new WaitForFixedUpdate();
+            while (t < RocketBurnTime && eva != null && eva.part != null && eva.part.Rigidbody != null)
+            {
+                eva.part.Rigidbody.AddForce(dir * RocketAccel, ForceMode.Acceleration);
+                t += Time.fixedDeltaTime;
+                yield return wait;
+            }
+            StopRocketFX(fx);
+        }
+
+        static GameObject StartRocketFX(KerbalEVA eva, Vector3 dir)
+        {
+            if (eva == null) return null;
+            GameObject fx = null;
+            try
+            {
+                fx = GameDatabase.Instance.GetModel("BDArmory/Models/exhaust/smallExhaust");
+                if (fx != null)
+                {
+                    fx.SetActive(true);
+                    fx.transform.SetParent(eva.transform, false);
+                    fx.transform.localPosition = Vector3.zero;
+                    fx.transform.rotation = Quaternion.LookRotation(-dir); // exhaust points away from the direction of travel
+                    foreach (var e in fx.GetComponentsInChildren<KSPParticleEmitter>(true)) e.emit = true;
+                }
+                var clip = SoundUtils.GetAudioClip("BDArmory/Sounds/launch");
+                if (clip != null)
+                {
+                    var audio = eva.gameObject.AddComponent<AudioSource>();
+                    audio.spatialBlend = 1;
+                    audio.minDistance = 5;
+                    audio.maxDistance = 1000;
+                    audio.PlayOneShot(clip, GameSettings.SHIP_VOLUME);
+                    Destroy(audio, clip.length + 0.5f);
+                }
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[BDArmory.EjectionSystem]: Ejection FX failed: {e.Message}");
+            }
+            return fx;
+        }
+
+        static void StopRocketFX(GameObject fx)
+        {
+            if (fx == null) return;
+            foreach (var e in fx.GetComponentsInChildren<KSPParticleEmitter>(true)) e.emit = false;
+            fx.transform.SetParent(null, true); // leave the smoke behind to fade out
+            Destroy(fx, 4f);
+        }
+
+        static void EnsureParachute(KerbalEVA eva)
+        {
+            var inv = eva.ModuleInventoryPartReference;
+            if (inv != null && !inv.ContainsPart("evaChute"))
+            {
+                inv.SetInventoryDefaults(); // KSP's default EVA kit includes the parachute
+                eva.part.UpdateMass();
+            }
+        }
+
+        /// <summary>Deploy the chute once the seat rocket has burned out and the kerbal is near the top of the arc.</summary>
+        IEnumerator DeployChute(KerbalEVA eva)
+        {
+            float timeout = Time.time + 2.5f;
+            var wait = new WaitForFixedUpdate();
+            while (eva != null && eva.vessel != null && Time.time < timeout && eva.vessel.verticalSpeed > 2) yield return wait;
+            if (eva == null || eva.vessel == null || eva.IsSeated() || eva.vessel.LandedOrSplashed) yield break;
+            var chute = VesselModuleRegistry.GetModule<ModuleEvaChute>(eva.vessel);
+            if (chute == null)
+            {
+                Message($"{eva.vessel.GetDisplayName()} has no parachute");
+                yield break;
+            }
+            eva.vessel.altimeterDisplayState = AltimeterDisplayState.AGL;
+            if (chute.deploymentState != ModuleParachute.deploymentStates.SEMIDEPLOYED)
+                chute.deploymentState = ModuleParachute.deploymentStates.STOWED;
+            // Below 300 m the chute opens fully straight away; higher up it stays semi-deployed until 300 m.
+            chute.deployAltitude = 300f;
+            chute.Deploy();
+        }
+    }
+}

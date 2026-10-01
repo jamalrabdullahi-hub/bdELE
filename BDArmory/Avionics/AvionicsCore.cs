@@ -34,7 +34,7 @@ namespace BDArmory.Avionics
 
         void Start()
         {
-            menuRect = new Rect(Screen.width - 300, 90, 240, 168);
+            menuRect = new Rect(Screen.width - 300, 90, 240, 252);
             radarRectIndex = GUIUtils.RegisterGUIRect(new Rect());
             listRectIndex = GUIUtils.RegisterGUIRect(new Rect());
             gpsRectIndex = GUIUtils.RegisterGUIRect(new Rect());
@@ -173,6 +173,9 @@ namespace BDArmory.Avionics
             AvionicsSettings.ShowRadar3D = GUI.Toggle(new Rect(8, y, w, 22), AvionicsSettings.ShowRadar3D, "3D Radar", AvionicsSettings.ShowRadar3D ? sel : btn); y += 24;
             AvionicsSettings.ShowTargetList = GUI.Toggle(new Rect(8, y, w, 22), AvionicsSettings.ShowTargetList, "Target List", AvionicsSettings.ShowTargetList ? sel : btn); y += 24;
             AvionicsSettings.ShowGPSManager = GUI.Toggle(new Rect(8, y, w, 22), AvionicsSettings.ShowGPSManager, "GPS Manager", AvionicsSettings.ShowGPSManager ? sel : btn); y += 28;
+            AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), $"Ejection seat: press {AvionicsSettings.KeyEject} twice", AvionicsDraw.Header, AvionicsDraw.HudText); y += 16;
+            AvionicsSettings.AutoEjectOnDestruction = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.AutoEjectOnDestruction, "Auto-eject if cockpit destroyed", AvionicsSettings.AutoEjectOnDestruction ? sel : btn); y += 22;
+            AvionicsSettings.AutoEjectBeforeImpact = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.AutoEjectBeforeImpact, "Auto-eject before ground impact", AvionicsSettings.AutoEjectBeforeImpact ? sel : btn); y += 26;
             var small = AvionicsDraw.LabelSmall;
             AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), "FLIR and the pod HUD are controlled from", small, AvionicsDraw.ScopeText); y += 13;
             AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), "the bottom of the Target Camera window.", small, AvionicsDraw.ScopeText); y += 16;

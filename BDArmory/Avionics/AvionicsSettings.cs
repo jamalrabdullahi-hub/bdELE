@@ -55,6 +55,11 @@ namespace BDArmory.Avionics
         public static KeyCode KeyPrevTarget = KeyCode.Keypad4;
         public static KeyCode KeyLockTarget = KeyCode.Keypad5;
         public static KeyCode KeySlewCamera = KeyCode.Keypad8;
+        public static KeyCode KeyEject = KeyCode.P; // press twice
+
+        // Ejection seats
+        public static bool AutoEjectOnDestruction = true;
+        public static bool AutoEjectBeforeImpact = true;
 
         public static readonly float[] Radar3DRanges = [2000, 5000, 10000, 20000, 40000, 80000, 160000, 320000];
         public static readonly float[] AltScales = [1, 2, 4, 8];
@@ -107,6 +112,9 @@ namespace BDArmory.Avionics
                 KeyPrevTarget = GetKey(node, "KeyPrevTarget", KeyPrevTarget);
                 KeyLockTarget = GetKey(node, "KeyLockTarget", KeyLockTarget);
                 KeySlewCamera = GetKey(node, "KeySlewCamera", KeySlewCamera);
+                KeyEject = GetKey(node, "KeyEject", KeyEject);
+                AutoEjectOnDestruction = GetBool(node, "AutoEjectOnDestruction", AutoEjectOnDestruction);
+                AutoEjectBeforeImpact = GetBool(node, "AutoEjectBeforeImpact", AutoEjectBeforeImpact);
 
                 GPSGroups.Clear();
                 var groups = node.GetNode("GPS_GROUPS");
@@ -164,6 +172,9 @@ namespace BDArmory.Avionics
                 node.AddValue("KeyPrevTarget", KeyPrevTarget.ToString());
                 node.AddValue("KeyLockTarget", KeyLockTarget.ToString());
                 node.AddValue("KeySlewCamera", KeySlewCamera.ToString());
+                node.AddValue("KeyEject", KeyEject.ToString());
+                node.AddValue("AutoEjectOnDestruction", AutoEjectOnDestruction);
+                node.AddValue("AutoEjectBeforeImpact", AutoEjectBeforeImpact);
 
                 var groups = node.AddNode("GPS_GROUPS");
                 foreach (var kvp in GPSGroups)
