@@ -47,6 +47,7 @@ namespace BDArmory.Avionics
         public static bool Radar3DNorthUp = false;
         public static bool Radar3DShowIRST = true;
         public static bool Radar3DShowTeam = true;
+        public static bool Radar3DShowDebris = true;
         public static bool WorldContactMarkers = false;
 
         // Target list
@@ -116,6 +117,7 @@ namespace BDArmory.Avionics
                 Radar3DNorthUp = GetBool(node, "Radar3DNorthUp", Radar3DNorthUp);
                 Radar3DShowIRST = GetBool(node, "Radar3DShowIRST", Radar3DShowIRST);
                 Radar3DShowTeam = GetBool(node, "Radar3DShowTeam", Radar3DShowTeam);
+                Radar3DShowDebris = GetBool(node, "Radar3DShowDebris", Radar3DShowDebris);
                 WorldContactMarkers = GetBool(node, "WorldContactMarkers", WorldContactMarkers);
 
                 TargetListShowFriendlies = GetBool(node, "TargetListShowFriendlies", TargetListShowFriendlies);
@@ -179,6 +181,7 @@ namespace BDArmory.Avionics
                 node.AddValue("Radar3DNorthUp", Radar3DNorthUp);
                 node.AddValue("Radar3DShowIRST", Radar3DShowIRST);
                 node.AddValue("Radar3DShowTeam", Radar3DShowTeam);
+                node.AddValue("Radar3DShowDebris", Radar3DShowDebris);
                 node.AddValue("WorldContactMarkers", WorldContactMarkers);
 
                 node.AddValue("TargetListShowFriendlies", TargetListShowFriendlies);

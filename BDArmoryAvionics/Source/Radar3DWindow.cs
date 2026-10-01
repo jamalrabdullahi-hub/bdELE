@@ -53,6 +53,8 @@ namespace BDArmory.Avionics
             x += 44;
             AvionicsSettings.Radar3DShowTeam = GUI.Toggle(new Rect(x, y, 46, h), AvionicsSettings.Radar3DShowTeam, "TEAM", AvionicsSettings.Radar3DShowTeam ? BDArmorySetup.SelectedButtonStyle : btn);
             x += 48;
+            AvionicsSettings.Radar3DShowDebris = GUI.Toggle(new Rect(x, y, 40, h), AvionicsSettings.Radar3DShowDebris, "DEB", AvionicsSettings.Radar3DShowDebris ? BDArmorySetup.SelectedButtonStyle : btn);
+            x += 42;
             AvionicsSettings.WorldContactMarkers = GUI.Toggle(new Rect(x, y, 52, h), AvionicsSettings.WorldContactMarkers, "WORLD", AvionicsSettings.WorldContactMarkers ? BDArmorySetup.SelectedButtonStyle : btn);
             x += 54;
             if (x + 44 < rect.width && GUI.Button(new Rect(x, y, 44, h), "View", btn)) { AvionicsSettings.Radar3DYaw = 0; AvionicsSettings.Radar3DElevation = 30; }
@@ -66,6 +68,25 @@ namespace BDArmory.Avionics
         }
 
         static float Range => AvionicsSettings.Radar3DRanges[AvionicsSettings.Radar3DRangeIndex];
+
+        // ---- Debris ages: only debris that appears after the scene loads is shown, for DebrisShowTime seconds ----
+        const float DebrisShowTime = 5f, DebrisFadeTime = 2f, DebrisBurstTime = 0.7f;
+        static readonly Dictionary<uint, float> debrisSeen = new(); // persistentId -> time first seen (-inf = was already there)
+        static float lastLevelTime = float.MaxValue;
+        static bool baselined;
+
+        static void UpdateDebrisAges()
+        {
+            // New scene (or reload): forget everything and treat the debris already lying around as old.
+            if (Time.timeSinceLevelLoad < lastLevelTime) { debrisSeen.Clear(); baselined = false; }
+            lastLevelTime = Time.timeSinceLevelLoad;
+            foreach (var v in FlightGlobals.Vessels)
+            {
+                if (v == null || v.vesselType != VesselType.Debris || debrisSeen.ContainsKey(v.persistentId)) continue;
+                debrisSeen[v.persistentId] = baselined ? Time.time : float.NegativeInfinity;
+            }
+            baselined = true;
+        }
 
         static void HandleInput(Rect scope)
         {
@@ -244,6 +265,46 @@ namespace BDArmory.Avionics
                 if (!c.IsGPS || c.Key == selectedKey) labels.Add((head, c));
             }
 
+            // Debris: new wreckage and spent stages, shown for a few seconds (burst ring, then fade) so kills are visible without clutter.
+            var debrisLabels = new List<(Vector2 pos, Vessel v, float dist)>();
+            int debrisCount = 0;
+            if (AvionicsSettings.Radar3DShowDebris)
+            {
+                UpdateDebrisAges();
+                foreach (var v in FlightGlobals.Vessels)
+                {
+                    if (v == null || v == own || v.vesselType != VesselType.Debris || v.mainBody != own.mainBody) continue;
+                    if (!debrisSeen.TryGetValue(v.persistentId, out float born) || float.IsNegativeInfinity(born)) continue; // old debris
+                    float age = Time.time - born;
+                    if (age > DebrisShowTime) continue;
+                    float alpha = age < DebrisShowTime - DebrisFadeTime ? 0.95f : 0.95f * (DebrisShowTime - age) / DebrisFadeTime;
+                    Color dc = new(1f, 0.72f, 0.35f, alpha); // hot orange: fresh wreckage
+                    Vector3 wpos = v.loaded ? (Vector3)v.CoM : (Vector3)v.GetWorldPos3D();
+                    Vector3 local = ToLocal(wpos - ownPos);
+                    if (new Vector2(local.x, local.z).magnitude > range) continue;
+                    debrisCount++;
+                    Vector2 basePt = Project(new Vector3(local.x, 0, local.z));
+                    Vector2 head = Project(local);
+                    head.x = Mathf.Clamp(head.x, scope.xMin + 4, scope.xMax - 4);
+                    head.y = Mathf.Clamp(head.y, scope.yMin + 4, scope.yMax - 4);
+                    AvionicsDraw.DashedLine(basePt, head, 1, dc, 2, 3);
+                    AvionicsDraw.Line(head + new Vector2(-3, -3), head + new Vector2(3, 3), 1.5f, dc);
+                    AvionicsDraw.Line(head + new Vector2(-3, 3), head + new Vector2(3, -3), 1.5f, dc);
+                    if (age < DebrisBurstTime) // expanding burst ring when it first appears
+                    {
+                        float k = age / DebrisBurstTime;
+                        AvionicsDraw.Circle(head, 4 + 18 * k, 2f * (1 - k) + 0.5f, new Color(1f, 0.85f, 0.4f, 1 - k), 20);
+                    }
+                    Vector3 vel = v.loaded ? (Vector3)v.Velocity() : (Vector3)v.srf_velocity;
+                    if (vel.sqrMagnitude > 25)
+                    {
+                        Vector2 vEnd = Project(local + ToLocal(vel).normalized * range * 0.02f);
+                        if ((vEnd - head).sqrMagnitude > 0.01f) AvionicsDraw.Line(head, head + (vEnd - head).normalized * 10f, 1, dc);
+                    }
+                    debrisLabels.Add((head, v, (wpos - ownPos).magnitude));
+                }
+            }
+
             // Threats: strobes on the outer ring at the threat's bearing; incoming missiles get a line to own ship.
             var threatLabels = new List<(Vector2 pos, Threat t)>();
             if (AvionicsSettings.Radar3DShowThreats)
@@ -268,6 +329,18 @@ namespace BDArmory.Avionics
                 AvionicsDraw.ShadowLabel(new Rect(pos.x - 40, pos.y - 16, 80, 13), t.Kind + tti, AvionicsDraw.LabelCenter, t.Color);
             }
             DrawWeaponEstimate(scope, own);
+
+            // Label the nearest few pieces of debris; count the rest.
+            debrisLabels.Sort((a, b) => a.dist.CompareTo(b.dist));
+            for (int i = 0; i < debrisLabels.Count && i < 5; i++)
+            {
+                var (pos, v, dist) = debrisLabels[i];
+                string n = v.GetName();
+                if (n.Length > 14) n = n.Substring(0, 14);
+                AvionicsDraw.ShadowLabel(new Rect(pos.x + 6, pos.y - 6, 120, 13), $"{n} {AvionicsDraw.FormatRange(dist)}", AvionicsDraw.LabelSmall, new Color(0.7f, 0.7f, 0.68f));
+            }
+            if (debrisCount > 0)
+                AvionicsDraw.ColorLabel(new Rect(scope.x + 6, scope.yMax - 30, 200, 14), $"Debris: {debrisCount} in range", AvionicsDraw.LabelSmall, AvionicsDraw.ScopeText);
 
             // Labels (drawn after the GL batch)
             var small = AvionicsDraw.LabelSmall;
