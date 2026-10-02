@@ -14,6 +14,14 @@ namespace BDArmory.Avionics
         public float arrivalSpeed;  // m/s at intercept
         public float maxRange;      // metres, against this target's current aspect and speed (0 if not computed)
         public bool approximate;    // modular missile: thrust and drag are estimated from its parts
+        public float maxSpeed;      // m/s, fastest point of the flight
+    }
+
+    /// <summary>Editor / Missile Lab summary of a modular missile design.</summary>
+    public struct MissileDesign
+    {
+        public bool valid;
+        public float massT, propT, thrustKN, isp, burnTime, deltaV, twr;
     }
 
     /// <summary>
@@ -34,6 +42,7 @@ namespace BDArmory.Avionics
             public float minSpeed = 150; // below this (after burnout) it can't catch anything
             public float maxTime = 240;
             public bool approximate;
+            public float prop;            // t of propellant
         }
 
         const float Dt = 0.1f;
@@ -98,10 +107,14 @@ namespace BDArmory.Avionics
             float mass = 0, thrust = 0, isp = 0, prop = 0;
             foreach (var p in parts)
             {
-                mass += p.mass + p.GetResourceMass();
+                // ELE motor boost (x thrust, x fuel) that is applied at launch: count it before then too.
+                var boost = p.FindModuleImplementing<ModuleMissileMotorBoost>();
+                float tMul = boost != null && !boost.thrustApplied ? boost.thrustMult : 1f;
+                float fMul = boost != null && !boost.fuelBoosted ? boost.fuelMult : 1f;
+                mass += p.mass + p.GetResourceMass() * fMul;
                 foreach (var e in p.FindModulesImplementing<ModuleEngines>())
                 {
-                    float t = e.maxThrust * (e.thrustPercentage / 100f);
+                    float t = e.maxThrust * (e.thrustPercentage / 100f) * tMul;
                     if (t <= 0) continue;
                     float i = e.atmosphereCurve.Evaluate(0.5f); // mid-atmosphere Isp
                     isp = (isp * thrust + i * t) / (thrust + t);
@@ -109,10 +122,10 @@ namespace BDArmory.Avionics
                 }
                 foreach (PartResource r in p.Resources)
                     if (r.info != null && r.info.density > 0 && r.resourceName != "ElectricCharge" && r.resourceName != "MonoPropellant")
-                        prop += (float)(r.amount * r.info.density);
+                        prop += (float)(r.amount * r.info.density) * fMul;
             }
             if (mass <= 0) return null;
-            var model = new Model { mass = mass, approximate = true, dropTime = mmg.dropTime, dragK = 0.0008f / Mathf.Max(0.05f, Mathf.Pow(mass, 1f / 3f)) };
+            var model = new Model { mass = mass, prop = prop, approximate = true, dropTime = mmg.dropTime, dragK = 0.0008f / Mathf.Max(0.05f, Mathf.Pow(mass, 1f / 3f)) };
             if (thrust > 0 && isp > 0 && prop > 0)
             {
                 float flow = thrust / (isp * 9.80665f); // t/s
@@ -154,6 +167,7 @@ namespace BDArmory.Avionics
                 Vector3 los = tpos - pos;
                 float dist = los.magnitude;
                 float speed = vel.magnitude;
+                est.maxSpeed = Mathf.Max(est.maxSpeed, speed);
                 if (dist < Mathf.Max(15f, speed * Dt * 1.5f))
                 {
                     est.canReach = speed >= m.minSpeed || t < 3;
@@ -195,6 +209,45 @@ namespace BDArmory.Avionics
             est.timeOfFlight = t;
             est.arrivalSpeed = vel.magnitude;
             return est;
+        }
+
+        // ---- Design mode (VAB/SPH Missile Lab) ----
+
+        /// <summary>Mass, propellant, thrust, Isp, burn time, delta-v and launch TWR of a modular missile (with the ELE motor boost).</summary>
+        public static MissileDesign Design(BDModularGuidance mmg)
+        {
+            var m = mmg != null ? FromModular(mmg) : null;
+            if (m == null) return default;
+            var d = new MissileDesign { valid = true, massT = m.mass, propT = m.prop };
+            if (m.phases.Count > 0)
+            {
+                var ph = m.phases[0];
+                d.thrustKN = ph.thrust; d.burnTime = ph.duration; d.isp = ph.massFlow > 0 ? ph.thrust / (ph.massFlow * 9.80665f) : 0;
+                d.deltaV = d.isp * 9.80665f * Mathf.Log(m.mass / Mathf.Max(0.001f, m.mass - m.prop));
+                d.twr = ph.thrust / (m.mass * 9.80665f);
+            }
+            return d;
+        }
+
+        /// <summary>Max range and flight against a target flying head-on (or away) at the launcher's altitude.
+        /// fuelScale scales the propellant (and burn time) to answer "how big a motor for this range?".</summary>
+        public static (float range, MissileEstimate atHalf) Envelope(BDModularGuidance mmg, CelestialBody body, float alt, float launchSpeed, float targetSpeed, bool headOn, float fuelScale = 1f)
+        {
+            var m = mmg != null ? FromModular(mmg) : null;
+            if (m == null || body == null) return (0, default);
+            if (fuelScale != 1f && m.phases.Count > 0)
+            {
+                var ph = m.phases[0]; ph.duration *= fuelScale; m.phases[0] = ph;
+                m.mass += m.prop * (fuelScale - 1f); m.prop *= fuelScale;
+            }
+            Vector3 up = Vector3.up, fwd = Vector3.forward;
+            Vector3 origin = (Vector3)body.position;
+            Vector3 launch = origin + up * (float)(body.Radius + alt);
+            Vector3 lv = fwd * launchSpeed, tv = fwd * (headOn ? -targetSpeed : targetSpeed);
+            // Work in a local frame: the body is "below" along -up regardless of where the editor scene puts it.
+            float range = MaxRange(m, body, launch, lv, launch + fwd * 20000f, tv);
+            var half = Simulate(m, body, launch, lv, launch + fwd * Mathf.Max(1000f, range * 0.5f), tv);
+            return (range, half);
         }
 
         static Vector3 LeadDirection(Vector3 pos, Vector3 vel, Vector3 tpos, Vector3 tvel)

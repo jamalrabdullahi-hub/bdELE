@@ -433,9 +433,10 @@ namespace BDArmory.Avionics
     static class Patch_ExplosionBaseDamage
     {
         static System.Reflection.MethodBase TargetMethod() => AccessTools.Method("BDArmory.FX.ExplosionFx:CreateExplosion");
-        static void Prefix(Vector3 __0, float __1, string __8, bool __12)
+        static void Prefix(Vector3 __0, float __1, Part __6, string __7, string __8, bool __12)
         {
             if (__12) return; // visual only
+            try { Fragmentation.Detonate(__6, __0, __1, __7, __8); } catch (Exception e) { Debug.LogWarning($"[BDArmoryAvionics]: fragmentation: {e.Message}"); }
             try { BaseLogistics.Explosion(__0, __1, __8); } catch (Exception e) { Debug.LogWarning($"[BDArmoryAvionics]: base damage: {e.Message}"); }
         }
     }
