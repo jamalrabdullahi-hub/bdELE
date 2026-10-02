@@ -117,6 +117,22 @@ BDArmory's pilot AI is paused while the assist flies and resumes when it's switc
 CSAR "Send": a VTOL unit flies there with the AI, fires its hover action group 3 km out, hovers in and lands
 within 25 m of the survivor, who then climbs aboard.
 
+ELE flight control system (FCS)
+-------------------------------
+Every BDArmory pilot AI part gets an "ELE flight control" part-menu section (off = BDArmory stock).
+Replaces the AI's fixed-gain PID with a learning controller:
+- Learns each aircraft's control power, damping and trim per axis while it flies (recursive least squares,
+  scaled by dynamic pressure), saved per craft (PluginData/FCS) and improving every flight.
+- Braking-curve rate commands (eases into the target instead of overshooting), slew-limited commands,
+  dynamic inversion with surface-lag lead: smooth, few corrections.
+- Coordinated turns (yaw zeroes sideslip, except when gun-aiming); energy autothrottle (needed acceleration
+  incl. climb and learned drag, slew-limited; afterburner / airbrake logic stays BDArmory's).
+- Formation / refuelling: wingmen follow the leader's pitch / roll rates and acceleration (feed-forward)
+  plus a damped position law - for tight formation and probe-and-drogue contact.
+Feel slider (smooth - aggressive), Calibrate (doublets, needs >400 m AGL), Forget learned model.
+Takes over gradually as each axis gains confidence ("Learned" shows control power and %); stock on the ground.
+"AI telemetry log" writes FCS learning / tracking error to KSP.log.
+
 Kill log and after-action report
 --------------------------------
 Every BDArmory hit (guns, rockets, missiles, nukes, fire, rams) is credited to the craft that caused it. A craft is

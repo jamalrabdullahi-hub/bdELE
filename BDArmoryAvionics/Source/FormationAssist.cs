@@ -38,6 +38,9 @@ namespace BDArmory.Avionics
 
         static bool InFormation(BDModulePilotAI ai, out Vector3 slot, out float dist) => InFormation(ai, out slot, out dist, out _);
 
+        /// <summary>For the ELE flight control system: this AI's slot and leader while holding formation / a refuelling slot.</summary>
+        public static bool Wingman(BDModulePilotAI ai, out Vector3 slot, out Vessel leader, out float dist) => InFormation(ai, out slot, out dist, out leader);
+
         /// <summary>The formation leader, if this AI is following one and is within assist range of its slot (Follow command only).</summary>
         public static Vessel LeaderInRange(BDModulePilotAI ai)
         {
@@ -111,6 +114,9 @@ namespace BDArmory.Avionics
             if (smoothedSpeed.TryGetValue(ai, out float prev)) target = Mathf.Lerp(prev, target, 0.15f);
             smoothedSpeed[ai] = target;
             adjustThrottle.Invoke(ai, new object[] { target, true, true, false, -1f });
+            // ELE flight control: follow the leader's acceleration (feed-forward) plus a damped position law, instead of a speed target.
+            float leaderAccel = Vector3.Dot((Vector3)leader.acceleration, leaderFwd);
+            FlightControl.DemandAcceleration(ai.vessel, Mathf.Clamp(leaderAccel + 0.06f * alongErr + 0.6f * closure, -15f, 15f));
 
             // Telemetry for tuning: slot error split into along / sideways / vertical, and how much we're wobbling.
             if (AvionicsSettings.AirOpsTelemetry && Time.time >= nextLog.GetValueOrDefault(ai))
