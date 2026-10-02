@@ -24,13 +24,10 @@ namespace BDArmory.Avionics
         const float RocketAccel = 14f * 9.81f; // m/s^2 during the rocket burn (about 14 g)
         const float RocketBurnTime = 0.4f;     // seconds
         const float StaggerTime = 0.25f;       // seconds between crew members
-        const float ImpactWarningTime = 1.2f;  // auto-eject when ground impact is this many seconds away...
-        const float ImpactMinSinkRate = 60f;   // ...and the vessel is sinking at least this fast (m/s)
 
         float lastTapTime = -10f;
         readonly HashSet<ProtoCrewMember> ejecting = new();
         readonly HashSet<Part> hooked = new();
-        readonly Dictionary<Vessel, float> lastAutoEject = new();
         float nextHookScan = 0;
 
         public static string LastMessage = "";
@@ -86,21 +83,6 @@ namespace BDArmory.Avionics
             {
                 nextHookScan = Time.time + 1f;
                 RefreshHooks();
-            }
-
-            if (!AvionicsSettings.AutoEjectBeforeImpact) return;
-            var vessels = FlightGlobals.VesselsLoaded;
-            for (int i = 0; i < vessels.Count; i++)
-            {
-                var v = vessels[i];
-                if (v == null || v.packed || v.isEVA || v.LandedOrSplashed || v.GetCrewCount() == 0) continue;
-                double sink = -v.verticalSpeed;
-                if (sink < ImpactMinSinkRate) continue;
-                double alt = v.radarAltitude;
-                if (alt <= 0 || alt / sink > ImpactWarningTime) continue;
-                if (lastAutoEject.TryGetValue(v, out float last) && Time.time - last < 3f) continue; // crew still on their way out
-                lastAutoEject[v] = Time.time;
-                EjectVessel(v, $"{v.GetDisplayName()}: ground impact imminent, ejecting!");
             }
         }
 

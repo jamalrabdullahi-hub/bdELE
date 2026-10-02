@@ -79,7 +79,8 @@ namespace BDArmory.Avionics
     /// </summary>
     public static class AICommander
     {
-        public const float MaterializeKm = 25f, DematerializeKm = 45f, ScrambleKm = 80f;
+        // Sorties become real craft within 150 km of you and stay real until 175 km (needs Physics Range Extender >= 175 km).
+        public const float MaterializeKm = 150f, DematerializeKm = 175f, ScrambleKm = 80f;
         public static bool RevealFlights;
 
         static FactionsScenario SC => FactionsScenario.Instance;
@@ -383,7 +384,20 @@ namespace BDArmory.Avionics
                 var sp = p + (Vector3d)(right * (i * 300f) - dir * (i * 150f));
                 double lat = body.GetLatitude(sp), lon = body.GetLongitude(sp);
                 double agl = Math.Max(800, fl.alt - Math.Max(0, body.TerrainAltitude(lat, lon)));
-                yield return SingleVesselSpawning.Instance.SpawnVessel(fl.path, lat, lon, agl, heading, 0f);
+                // Catch the new craft the moment it appears (BDArmory's spawn sequence takes a few seconds) and hold it level.
+                var before = new HashSet<uint>(); foreach (var ev in FlightGlobals.Vessels) if (ev != null) before.Add(ev.persistentId);
+                var spawn = StartCoroutine(SingleVesselSpawning.Instance.SpawnVessel(fl.path, lat, lon, agl, heading, 0f));
+                bool held = false; float tSpawn = Time.time;
+                while (SingleVesselSpawning.Instance.vesselsSpawning || Time.time - tSpawn < 0.2f)
+                {
+                    if (!held)
+                        foreach (var nv in FlightGlobals.VesselsLoaded)
+                            if (nv != null && !before.Contains(nv.persistentId) && nv.vesselType != VesselType.Debris && nv.parts.Count > 1)
+                            { SpawnHold.Attach(nv, dir, fl.speed); held = true; break; }
+                    if (Time.time - tSpawn > 30f) break;
+                    yield return null;
+                }
+                yield return spawn;
                 Vessel v = null;
                 if (SingleVesselSpawning.Instance.vesselSpawnSuccess && latestName?.GetValue(SingleVesselSpawning.Instance) is string name && spawned?.GetValue(SingleVesselSpawning.Instance) is Dictionary<string, Vessel> dict) dict.TryGetValue(name, out v);
                 if (v == null) { Debug.LogWarning($"[BDArmoryAvionics]: {fl.Callsign}: spawn failed ({SingleVesselSpawning.Instance.spawnFailureReason})"); continue; }
@@ -402,7 +416,7 @@ namespace BDArmory.Avionics
             if (wm != null && f != null) { wm.SetTeam(f.BDTeam); if (!wm.guardMode) wm.ToggleGuardMode(); }
             var ai = v.ActiveController().PilotAI;
             if (ai != null && !ai.pilotEnabled) ai.ActivatePilot();
-            if (!BDArmorySettings.VESSEL_SPAWN_INITIAL_VELOCITY) v.ChangeWorldVelocity((Vector3d)(dir * fl.speed) - v.srf_velocity);
+            if (v.GetComponent<SpawnHold>() == null) SpawnHold.Attach(v, dir, fl.speed); // keeps it level until the AI is really flying
             var target = FactionsScenario.BaseAt(fl.targetBase);
             if (fl.mission == FlightMission.Strike || fl.mission == FlightMission.SEAD) { if (target != null) C2Tasking.Strike(v, new Vector3d(target.lat, target.lon, target.alt)); }
             else C2Tasking.MoveTo(v, new Vector3d(fl.tLat, fl.tLon, fl.alt));

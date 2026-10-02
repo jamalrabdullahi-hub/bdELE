@@ -107,7 +107,7 @@ namespace BDArmory.Avionics
 
         // Ejection seats
         public static bool AutoEjectOnDestruction = true;
-        public static bool AutoEjectBeforeImpact = true;
+        public static bool AutoEjectBeforeImpact = false; // removed feature: never ejects before ground impact
 
         // Threat warning
         public static bool ThreatBanner = true;
@@ -183,7 +183,6 @@ namespace BDArmory.Avionics
                 KeySlewCamera = GetKey(node, "KeySlewCamera", KeySlewCamera);
                 KeyEject = GetKey(node, "KeyEject", KeyEject);
                 AutoEjectOnDestruction = GetBool(node, "AutoEjectOnDestruction", AutoEjectOnDestruction);
-                AutoEjectBeforeImpact = GetBool(node, "AutoEjectBeforeImpact", AutoEjectBeforeImpact);
                 KeyCMProgram = GetKey(node, "KeyCMProgram", KeyCMProgram);
                 KeyLMStrike = GetKey(node, "KeyLMStrike", KeyLMStrike);
                 KeyLMManual = GetKey(node, "KeyLMManual", KeyLMManual);
@@ -271,7 +270,6 @@ namespace BDArmory.Avionics
                 node.AddValue("KeySlewCamera", KeySlewCamera.ToString());
                 node.AddValue("KeyEject", KeyEject.ToString());
                 node.AddValue("AutoEjectOnDestruction", AutoEjectOnDestruction);
-                node.AddValue("AutoEjectBeforeImpact", AutoEjectBeforeImpact);
                 node.AddValue("KeyCMProgram", KeyCMProgram.ToString());
                 node.AddValue("KeyLMStrike", KeyLMStrike.ToString());
                 node.AddValue("KeyLMManual", KeyLMManual.ToString());
