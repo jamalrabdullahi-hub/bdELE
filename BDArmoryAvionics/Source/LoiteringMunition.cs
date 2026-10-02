@@ -165,6 +165,7 @@ namespace BDArmory.Avionics
             foreach (var e in VesselModuleRegistry.GetModules<ModuleEngines>(vessel)) if (e != null && !e.EngineIgnited) e.Activate();
             armed = true;
             SetState(LMState.Transit);
+            try { Ocisly.OpenFirst(vessel, "loitering munition armed"); } catch { }
             Debug.Log($"[BDArmoryAvionics]: {Label} armed: team {teamName}, home {homeName}, mode {strikeMode}, targets {targetType}, loiter {loiterLat:F4},{loiterLon:F4} at {loiterAlt:F0} m");
             ScreenMessages.PostScreenMessage($"{Label} armed - {strikeMode}, {targetType}", 3f, ScreenMessageStyle.UPPER_CENTER);
             if (team == null) ScreenMessages.PostScreenMessage($"{Label}: no team (launch it from a craft with a weapon manager, or give it one) - it will only strike designated targets", 5f, ScreenMessageStyle.UPPER_CENTER);

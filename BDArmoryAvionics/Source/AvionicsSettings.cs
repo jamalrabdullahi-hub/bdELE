@@ -99,7 +99,9 @@ namespace BDArmory.Avionics
         public static KeyCode KeyLMDetonate = KeyCode.KeypadPeriod;
         public static KeyCode KeyLMReturn = KeyCode.KeypadMinus;   // back to the operator's craft
         public static bool ShowLM = false;
-        public static bool MissileDLZ = true;          // modular missiles get their launch range from the flight estimator
+        public static bool MissileDLZ = true;
+        public static bool ShowFeeds = false;
+        public static bool AutoFeeds = true;            // OCISLY: stream munition / CSAR cameras automatically          // modular missiles get their launch range from the flight estimator
         public static KeyCode KeyVTOLHover = KeyCode.Keypad7;   // VTOL assist: hover hold on/off
         public static KeyCode KeyVTOLLand = KeyCode.Keypad9;    // VTOL assist: auto-land
 
@@ -191,6 +193,8 @@ namespace BDArmory.Avionics
                 KeyVTOLLand = GetKey(node, "KeyVTOLLand", KeyVTOLLand);
                 ShowLM = GetBool(node, "ShowLM", ShowLM);
                 MissileDLZ = GetBool(node, "MissileDLZ", MissileDLZ);
+                ShowFeeds = GetBool(node, "ShowFeeds", ShowFeeds);
+                AutoFeeds = GetBool(node, "AutoFeeds", AutoFeeds);
                 ThreatBanner = GetBool(node, "ThreatBanner", ThreatBanner);
                 Radar3DShowThreats = GetBool(node, "Radar3DShowThreats", Radar3DShowThreats);
 
@@ -277,6 +281,8 @@ namespace BDArmory.Avionics
                 node.AddValue("KeyVTOLLand", KeyVTOLLand.ToString());
                 node.AddValue("ShowLM", ShowLM);
                 node.AddValue("MissileDLZ", MissileDLZ);
+                node.AddValue("ShowFeeds", ShowFeeds);
+                node.AddValue("AutoFeeds", AutoFeeds);
                 node.AddValue("ThreatBanner", ThreatBanner);
                 node.AddValue("Radar3DShowThreats", Radar3DShowThreats);
 

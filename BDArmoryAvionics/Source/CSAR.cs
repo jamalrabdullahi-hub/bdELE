@@ -183,6 +183,7 @@ namespace BDArmory.Avionics
                 if (vtol == null) continue;
                 C2Tasking.Release(v);
                 vtol.GoTo(s.lat, s.lon, 30, land: true);
+                try { Ocisly.OpenFirst(v, "CSAR pickup"); } catch { }
                 AICommander.Log($"{v.GetName()} on scene: VTOL pickup of {s.kerbal}");
             }
         }
