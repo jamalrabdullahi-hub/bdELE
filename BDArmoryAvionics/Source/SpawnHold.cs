@@ -1,71 +1,117 @@
+using HarmonyLib;
 using UnityEngine;
 
+using BDArmory.Control;
 using BDArmory.Extensions;
+using BDArmory.Utils;
 
 namespace BDArmory.Avionics
 {
     /// <summary>
-    /// Holds a freshly spawned AI aircraft level at cruise speed until BDArmory's pilot AI is actually flying it.
-    /// The spawn sequence and AI activation take a couple of seconds; without this the craft falls into a dive.
-    /// Keeps re-activating the pilot (and guard mode) meanwhile, then hands over and removes itself.
+    /// Holds a freshly spawned AI aircraft level at cruise speed until BDArmory's pilot AI is really flying it:
+    /// engines lit and producing thrust, gear up, pilot AI and guard mode on, level or climbing. After the handover it keeps
+    /// watching for 30 s; if the craft dives toward the ground it catches it again and logs what the AI, engines and
+    /// throttle were doing (so the cause shows in KSP.log).
     /// </summary>
     public class SpawnHold : MonoBehaviour
     {
+        static readonly System.Reflection.FieldInfo statusField = AccessTools.Field(typeof(BDGenericAIBase), "currentStatus");
         Vessel v;
         Vector3 dir;
-        float speed, t0, aiSince = -1, nextActivate;
-        bool velocitySet;
+        float speed, t0, aiSince = -1, nextActivate, releasedAt = -1, nextLog, holdAlt;
+        bool velocitySet, holding = true;
+        int catches;
 
         public static void Attach(Vessel v, Vector3 dir, float speed)
         {
             if (v == null || v.GetComponent<SpawnHold>() != null) return;
             var h = v.gameObject.AddComponent<SpawnHold>();
-            h.v = v; h.dir = dir.normalized; h.speed = speed; h.t0 = Time.time;
+            h.v = v; h.dir = dir.normalized; h.speed = speed; h.t0 = Time.time; h.holdAlt = (float)v.altitude;
             v.OnFlyByWire += h.Fly;
             Debug.Log($"[BDArmoryAvionics]: spawn hold on {v.GetName()}");
         }
 
         void FixedUpdate()
         {
-            if (v == null || v.packed) return;
-            if (!velocitySet && v.loaded) { v.ChangeWorldVelocity((Vector3d)(dir * speed) - v.srf_velocity); velocitySet = true; }
+            if (v == null || v.packed || !v.loaded) return;
+            if (!velocitySet) { v.ChangeWorldVelocity((Vector3d)(dir * speed) - v.srf_velocity); velocitySet = true; }
             var ai = v.ActiveController().PilotAI;
             var wm = v.ActiveController().WM;
-            if (Time.time >= nextActivate)
+
+            if (holding)
             {
-                nextActivate = Time.time + 0.5f;
-                if (ai != null && !ai.pilotEnabled) ai.ActivatePilot();
-                if (wm != null && !wm.guardMode) wm.ToggleGuardMode();
+                if (Time.time >= nextActivate)
+                {
+                    nextActivate = Time.time + 0.5f;
+                    if (ai != null && !ai.pilotEnabled) ai.ActivatePilot();
+                    if (wm != null && !wm.guardMode) wm.ToggleGuardMode();
+                    EnsureEngines();
+                    if (!v.LandedOrSplashed && v.radarAltitude > 50) v.ActionGroups.SetGroup(KSPActionGroup.Gear, false);
+                }
+                if (ai != null && ai.pilotEnabled && Thrust() > 0) { if (aiSince < 0) aiSince = Time.time; }
+                else aiSince = -1;
+                bool steady = v.verticalSpeed > -15;
+                if ((aiSince > 0 && Time.time - aiSince > 2f && steady) || Time.time - t0 > 30f) Release(ai, wm);
+                return;
             }
-            if (ai != null && ai.pilotEnabled) { if (aiSince < 0) aiSince = Time.time; }
-            else aiSince = -1;
-            // Hand over once the AI has been flying for 2 s (or give up after 30 s).
-            if ((aiSince > 0 && Time.time - aiSince > 2f) || Time.time - t0 > 30f) Release();
+
+            // Watch after the handover.
+            float since = Time.time - releasedAt;
+            if (since > 30f) { Destroy(this); return; }
+            if (Time.time >= nextLog) { nextLog = Time.time + 2f; Log("after handover", ai, wm); }
+            bool diving = v.verticalSpeed < -40 && v.radarAltitude < 2500 && !v.LandedOrSplashed;
+            if (diving && catches < 3)
+            {
+                catches++;
+                Log("DIVING - caught again", ai, wm);
+                holding = true; aiSince = -1; t0 = Time.time; holdAlt = Mathf.Max((float)v.altitude, holdAlt);
+                v.OnFlyByWire -= Fly; v.OnFlyByWire += Fly; // after the AI, so the hold wins
+            }
         }
 
-        void Release()
+        void EnsureEngines()
         {
+            int active = 0;
+            foreach (var e in VesselModuleRegistry.GetModuleEngines(v)) if (e != null && e.EngineIgnited) active++;
+            if (active > 0) return;
+            foreach (var e in VesselModuleRegistry.GetModuleEngines(v)) if (e != null && !e.EngineIgnited && !e.part.FindModuleImplementing<Weapons.Missiles.MissileBase>()) e.Activate();
+            Debug.Log($"[BDArmoryAvionics]: {v.GetName()}: no engines were running after spawn - activated them");
+        }
+
+        float Thrust() { float t = 0; foreach (var e in VesselModuleRegistry.GetModuleEngines(v)) if (e != null && e.EngineIgnited) t += e.finalThrust; return t; }
+
+        void Release(BDModulePilotAI ai, MissileFire wm)
+        {
+            holding = false; releasedAt = Time.time; nextLog = Time.time;
             if (v != null) v.OnFlyByWire -= Fly;
-            Debug.Log($"[BDArmoryAvionics]: spawn hold released on {v?.GetName()} after {Time.time - t0:F1} s (AI {(aiSince > 0 ? "flying" : "NOT active")})");
-            Destroy(this);
+            Log($"released after {Time.time - t0:F1} s", ai, wm);
+        }
+
+        void Log(string what, BDModulePilotAI ai, MissileFire wm)
+        {
+            int engines = 0; foreach (var e in VesselModuleRegistry.GetModuleEngines(v)) if (e != null && e.EngineIgnited) engines++;
+            string status = ai != null && statusField != null ? statusField.GetValue(ai) as string : "-";
+            Debug.Log($"[BDArmoryAvionics]: spawn {v.GetName()} {what}: alt {v.altitude:F0} m AGL {v.radarAltitude:F0}, V/S {v.verticalSpeed:F0}, speed {v.srfSpeed:F0}, " +
+                      $"throttle {v.ctrlState.mainThrottle:F2}, engines {engines} thrust {Thrust():F0} kN, gear {(v.ActionGroups[KSPActionGroup.Gear] ? "down" : "up")}, " +
+                      $"AI {(ai != null && ai.pilotEnabled ? "on" : "OFF")} cmd {ai?.currentCommand} status '{status}', guard {(wm != null && wm.guardMode)}, active vessel {v == FlightGlobals.ActiveVessel}");
         }
 
         void OnDestroy() { if (v != null) v.OnFlyByWire -= Fly; }
 
-        /// <summary>Wings level, nose on the horizon (slight climb), full throttle. Added before the AI starts, so once the AI is active its own inputs take over.</summary>
+        /// <summary>Wings level, climb back to the spawn altitude (gently), full throttle.</summary>
         void Fly(FlightCtrlState s)
         {
-            if (v == null || v.packed) return;
+            if (!holding || v == null || v.packed) return;
             var rt = v.ReferenceTransform;
             Vector3 up = (v.CoM - v.mainBody.position).normalized;
             Vector3 nose = rt.up, right = rt.right, top = -rt.forward;
-            float bank = Mathf.Atan2(Vector3.Dot(up, right), Vector3.Dot(up, top));          // + = right wing up... roll right to level
+            float bank = Mathf.Atan2(Vector3.Dot(up, right), Vector3.Dot(up, top));
             float pitch = Mathf.Asin(Mathf.Clamp(Vector3.Dot(nose, up), -1f, 1f));
+            float wantPitch = Mathf.Clamp((holdAlt - (float)v.altitude) / 400f, 0.03f, 0.25f); // 2-14 degrees nose up
             Vector3 w = v.angularVelocity;
-            float pitchRate = -w.x, rollRate = -w.y, yawRate = -w.z;
-            s.roll = Mathf.Clamp(1.5f * bank - 0.5f * rollRate, -1f, 1f);
-            s.pitch = Mathf.Clamp(2f * (3f * Mathf.Deg2Rad - pitch) - 0.6f * pitchRate, -1f, 1f);
-            s.yaw = Mathf.Clamp(-0.3f * yawRate, -1f, 1f);
+            s.roll = Mathf.Clamp(1.5f * bank - 0.5f * -w.y, -1f, 1f);
+            s.pitch = Mathf.Clamp(2f * (wantPitch - pitch) - 0.6f * -w.x, -1f, 1f);
+            s.yaw = Mathf.Clamp(-0.3f * -w.z, -1f, 1f);
             s.mainThrottle = 1f;
         }
     }
