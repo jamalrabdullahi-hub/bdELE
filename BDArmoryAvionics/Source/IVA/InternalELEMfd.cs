@@ -50,6 +50,10 @@ namespace BDArmory.Avionics
 
         public override void OnAwake()
         {
+            // IVA props must live on the interior's layer, or the flight camera draws them in the world
+            int layer = internalProp.internalModel != null ? internalProp.internalModel.gameObject.layer : 16;
+            if (layer == 0) layer = 16;
+            foreach (var t in internalProp.GetComponentsInChildren<Transform>(true)) t.gameObject.layer = layer;
             var root = internalProp.FindModelTransform(rootName);
             if (root != null && modelRotation != Vector3.zero) root.localRotation = Quaternion.Euler(modelRotation);
             rt = new RenderTexture(resolution, resolution, 0) { name = "ELE MFD" }; rt.Create();
