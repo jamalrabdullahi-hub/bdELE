@@ -523,7 +523,11 @@ namespace BDArmory.Avionics
                 y += 24;
             }
             AICommander.RevealFlights = GUI.Toggle(new Rect(x, y, 200, 20), AICommander.RevealFlights, "Reveal AI flights on C2 map", AICommander.RevealFlights ? sel : btn);
-            y += 26;
+            AvionicsDraw.ColorLabel(new Rect(x + 210, y + 3, 260, 16), $"AI flights become real within {AvionicsSettings.TheatreSpawnKm:F0} km", small, AvionicsDraw.HudText);
+            AvionicsSettings.TheatreSpawnKm = Mathf.Round(GUI.HorizontalSlider(new Rect(x + 470, y + 6, Mathf.Max(80, w - 480), 14), AvionicsSettings.TheatreSpawnKm, 20f, 200f) / 5) * 5;
+            y += 22;
+            AvionicsDraw.ColorLabel(new Rect(x, y, w, 14), "Only craft inside the atmosphere spawn units; satellites in orbit just watch. Larger range = more craft loaded = more load.", small, AvionicsDraw.ScopeText);
+            y += 20;
             AvionicsDraw.ColorLabel(new Rect(x, y, w, 14), "ACTIVE SORTIES", AvionicsDraw.Header, AvionicsDraw.HudText); y += 16;
             if (sc.flights.Count == 0) { AvionicsDraw.ColorLabel(new Rect(x, y, w, 14), "none", small, AvionicsDraw.ScopeText); y += 14; }
             var body = FlightGlobals.GetHomeBody();

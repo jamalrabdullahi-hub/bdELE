@@ -80,7 +80,18 @@ namespace BDArmory.Avionics
     public static class AICommander
     {
         // Sorties become real craft within 150 km of you and stay real until 175 km (needs Physics Range Extender >= 175 km).
-        public const float MaterializeKm = 150f, DematerializeKm = 175f, ScrambleKm = 80f;
+        // Theatre bubble: AI flights become real craft inside this slant range of a player/enemy craft that's in the atmosphere.
+        public static float MaterializeKm => AvionicsSettings.TheatreSpawnKm;
+        public static float DematerializeKm => AvionicsSettings.TheatreSpawnKm + 25f;
+        public const float ScrambleKm = 80f;
+
+        /// <summary>Only craft inside the atmosphere bring the theatre to life; satellites and orbiting craft just look (they don't spawn units).</summary>
+        public static bool InTheatre(Vessel v)
+        {
+            if (v == null || v.mainBody == null) return false;
+            double ceiling = v.mainBody.atmosphere ? v.mainBody.atmosphereDepth : 20000;
+            return v.altitude < ceiling && v.situation != Vessel.Situations.ORBITING && v.situation != Vessel.Situations.ESCAPING;
+        }
         public static bool RevealFlights;
 
         static FactionsScenario SC => FactionsScenario.Instance;
@@ -299,7 +310,7 @@ namespace BDArmory.Avionics
             var f = FactionsScenario.FactionByName(fl.faction);
             foreach (var v in FlightGlobals.VesselsLoaded)
             {
-                if (v == null || v.packed) continue;
+                if (v == null || v.packed || !InTheatre(v)) continue;
                 if (v != FlightGlobals.ActiveVessel)
                 {
                     var wm = v.ActiveController().WM;
@@ -418,8 +429,10 @@ namespace BDArmory.Avionics
                 yield return null;
                 Setup(v, fl, f, dir);
                 fl.vessels.Add(v.persistentId);
+                yield return new WaitForSeconds(1.5f); // one craft at a time: spreads the load hitches out
             }
             if (fl.vessels.Count == 0) { fl.state = FlightState.Returning; AICommander.Log($"{fl.Callsign} could not be spawned - stays virtual"); }
+            yield return new WaitForSeconds(4f); // breathing room before the next flight
             busy = false;
         }
 

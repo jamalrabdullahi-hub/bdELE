@@ -116,7 +116,7 @@ namespace BDArmory.Avionics
                     Watch(b);
                     if (km > DespawnKm) Despawn(b);
                 }
-                else if (km < SpawnKm && !Spawning && b.status != BaseStatus.Destroyed && Standing(b) > 0 && FlightGlobals.ActiveVessel.mainBody == FlightGlobals.GetHomeBody())
+                else if (km < SpawnKm && !Spawning && AICommander.InTheatre(av) && b.status != BaseStatus.Destroyed && Standing(b) > 0 && FlightGlobals.ActiveVessel.mainBody == FlightGlobals.GetHomeBody())
                     StartCoroutine(Spawn(b));
             }
         }
