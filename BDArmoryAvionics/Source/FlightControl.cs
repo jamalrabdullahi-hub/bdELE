@@ -201,6 +201,7 @@ namespace BDArmory.Avionics
             public float thr = -1, dragEst, accFilt;
             public float nextLog;
             public double rmsErr;
+            public bool seeded; // starting model predicted from the airframe (AeroPredict)
         }
 
         static readonly Dictionary<BDModulePilotAI, State> states = new();
@@ -256,6 +257,20 @@ namespace BDArmory.Avionics
             Vector3 w = v.angularVelocity;
             float[] rate = [-w.x, -w.z, -w.y]; // pitch up, yaw right, roll right (rad/s)
             float[] stock = [pitch, yaw, roll];
+
+            // ---- Starting model from the airframe (KSP's own lift maths), for axes not learned yet ----
+            if (!st.seeded && !v.packed)
+            {
+                st.seeded = true;
+                var (perK, cst) = AeroPredict.ControlPower(v);
+                for (int i = 0; i < 3; i++)
+                {
+                    var mod = m.models[i];
+                    if (mod.samples >= 100) continue;
+                    mod.theta[0] = perK[i]; mod.theta[1] = cst[i]; mod.theta[2] = -1.5; mod.theta[3] = 0;
+                }
+                Debug.Log($"[BDArmoryAvionics]: FCS {v.GetName()}: predicted control power per kPa p/y/r {perK[0]:F2}/{perK[1]:F2}/{perK[2]:F2}, wheels {cst[0]:F2}/{cst[1]:F2}/{cst[2]:F2} rad/s²");
+            }
 
             // ---- Identification (what last frame's input did) ----
             bool learn = !v.LandedOrSplashed && q > 0.2 && st.havePrev && !v.packed;
@@ -317,6 +332,7 @@ namespace BDArmory.Avionics
                 var mod = m.models[i];
                 double B = mod.Power(q);
                 float conf = mod.samples < 100 || B < 0.02 ? 0f : Mathf.Clamp01((mod.samples - 100) / 300f);
+                if (st.seeded && B >= 0.02) conf = Mathf.Max(conf, 0.6f); // predicted model: fly on it from the start, learning refines it
                 if (m.calibrating || v.LandedOrSplashed || q < 0.2) conf = 0; // on the ground / no air: stock steering
                 float aMax = (float)Math.Max(0.05, Math.Abs(B) * (0.5 + 0.3 * f));
 
