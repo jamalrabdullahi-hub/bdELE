@@ -198,6 +198,8 @@ namespace BDArmory.Avionics
             Line(ref y, w, StealthRCS.ModeHelp);
             if (GUI.Button(new Rect(0, y, w, 22), EditorStealthWindow.Show ? "Stealth & EW analysis (open)" : "Open stealth & EW analysis", EditorStealthWindow.Show ? sel : btn)) EditorStealthWindow.Show = !EditorStealthWindow.Show;
             y += 26;
+            if (GUI.Button(new Rect(0, y, w, 22), EditorTurretWindow.Show ? "IR turret tool (open)" : "Open IR turret tool", EditorTurretWindow.Show ? sel : btn)) EditorTurretWindow.Show = !EditorTurretWindow.Show;
+            y += 26;
 
             if (fit.pilot != null)
             {

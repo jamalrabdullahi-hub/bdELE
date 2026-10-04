@@ -26,11 +26,22 @@ namespace BDArmory.Avionics
         [KSPField(guiActive = true, guiActiveEditor = false, guiName = "Turret", groupName = "irturret")]
         public string status = "-";
 
+        // Logic settings, edited in the SPH/VAB turret tool. Per servo:
+        [KSPField(isPersistant = true)] public int direction = 0;            // 0 auto (probe in flight), 1 = +, -1 = -
+        // Per turret (kept on its base servo):
+        [KSPField(isPersistant = true)] public string priority = TurretLogic.DefaultPriority; // order; "-" prefix = disabled
+        [KSPField(isPersistant = true)] public string aimWith = "Auto";       // Auto, Gun, Launcher, Camera
+        [KSPField(isPersistant = true)] public float slewLimit = 100f;        // % of servo max speed
+        [KSPField(isPersistant = true)] public float slowAngle = 20f;         // start slowing this many degrees out
+        [KSPField(isPersistant = true)] public float deadband = 0.15f;        // degrees
+        [KSPField(isPersistant = true)] public bool restWhenIdle = true;
+        [KSPField(isPersistant = true)] public float maxRangeKm = 0f;         // 0 = no limit
+
         [KSPEvent(guiActive = true, guiName = "Show aim lines", groupName = "irturret")]
         public void ToggleAimLines() { IRTurretController.ShowAimLines = !IRTurretController.ShowAimLines; Events[nameof(ToggleAimLines)].guiName = IRTurretController.ShowAimLines ? "Hide aim lines" : "Show aim lines"; }
 
         public override string GetInfo() =>
-            "BDArmory turret control. Servos between the craft and a gun, launcher or camera aim it automatically at the camera track, guard target, radar lock or selected contact.";
+            "BDArmory turret control. Servos between the craft and a gun, launcher or camera aim it automatically. Tune it in the SPH/VAB with ELE's turret tool.";
 
         public override string GetModuleDisplayName() => "BDA Turret";
     }
@@ -96,6 +107,96 @@ namespace BDArmory.Avionics
         }
     }
 
+    /// <summary>Turret detection and settings, shared by flight control and the SPH/VAB tool.</summary>
+    public static class TurretLogic
+    {
+        public const string DefaultPriority = "track,guard,radar,tgp,selected";
+        public static readonly Dictionary<string, string> SourceNames = new()
+        {
+            { "track", "EO/IR camera track" }, { "guard", "Guard-mode target" }, { "radar", "Radar lock" }, { "tgp", "Targeting pod point" }, { "selected", "Selected contact" },
+        };
+        public static readonly string[] AimWithOptions = { "Auto", "Gun", "Launcher", "Camera" };
+
+        public class Def
+        {
+            public readonly List<(Part part, PartModule servo, ModuleIRTurret module)> chain = new(); // base first
+            public Part aimPart;
+            public int kind; // 0 gun, 1 launcher, 2 camera
+            public readonly List<(Part part, int kind)> options = new(); // every aimable part on this chain
+            public ModuleIRTurret Settings => chain[0].module;
+            public string Key => string.Join(",", chain.ConvertAll(c => c.part.persistentId.ToString()));
+            public string KindName => kind == 0 ? "gun" : kind == 1 ? "launcher" : "camera";
+        }
+
+        public static int AimKind(Part p)
+        {
+            if (p.FindModuleImplementing<ModuleWeapon>() is ModuleWeapon w && w.fireTransforms != null && w.fireTransforms.Length > 0) return 0;
+            if (p.FindModuleImplementing<MissileBase>() is MissileBase mb && !mb.HasFired) return 1;
+            if (HullCam.Find(p) != null || p.FindModuleImplementing<ModuleTargetingCamera>() != null) return 2;
+            return -1;
+        }
+
+        /// <summary>Every turret on a craft: rotating, enabled servos between each aimable part and the root.</summary>
+        public static List<Def> Detect(IEnumerable<Part> parts, bool includeDisabled = false)
+        {
+            var byKey = new Dictionary<string, Def>();
+            var order = new List<Def>();
+            foreach (var p in parts)
+            {
+                int k = AimKind(p);
+                if (k < 0) continue;
+                var def = new Def();
+                for (var q = p.parent; q != null; q = q.parent)
+                {
+                    var m = q.FindModuleImplementing<ModuleIRTurret>();
+                    if (m == null || (!m.aiming && !includeDisabled)) continue;
+                    var servo = IRServo.Find(q);
+                    if (servo == null || !IRServo.Rotational(servo)) continue;
+                    def.chain.Insert(0, (q, servo, m));
+                }
+                if (def.chain.Count == 0) continue;
+                if (!byKey.TryGetValue(def.Key, out var d)) { byKey[def.Key] = d = def; order.Add(d); }
+                d.options.Add((p, k));
+            }
+            foreach (var d in order)
+            {
+                string pref = d.Settings.aimWith;
+                int want = pref == "Gun" ? 0 : pref == "Launcher" ? 1 : pref == "Camera" ? 2 : -1;
+                var pick = d.options.Find(o => o.kind == want);
+                if (pick.part == null) { d.options.Sort((a, b) => a.kind.CompareTo(b.kind)); pick = d.options[0]; }
+                d.aimPart = pick.part; d.kind = pick.kind;
+            }
+            return order;
+        }
+
+        public static List<(string id, bool on)> ParsePriority(string s)
+        {
+            var list = new List<(string, bool)>();
+            foreach (var t in (s ?? DefaultPriority).Split(','))
+            {
+                string id = t.Trim().TrimStart('-');
+                if (SourceNames.ContainsKey(id) && !list.Exists(x => x.Item1 == id)) list.Add((id, !t.Trim().StartsWith("-")));
+            }
+            foreach (var id in SourceNames.Keys) if (!list.Exists(x => x.Item1 == id)) list.Add((id, true));
+            return list;
+        }
+
+        public static string FormatPriority(List<(string id, bool on)> list) => string.Join(",", list.ConvertAll(x => (x.on ? "" : "-") + x.id));
+
+        /// <summary>Aim ray of a part: gun barrel, launcher rail, camera line of sight.</summary>
+        public static void AimRay(Part p, out Vector3 origin, out Vector3 fwd)
+        {
+            if (p.FindModuleImplementing<ModuleWeapon>() is ModuleWeapon w && w.fireTransforms != null && w.fireTransforms.Length > 0) { origin = w.fireTransforms[0].position; fwd = w.fireTransforms[0].forward; return; }
+            if (p.FindModuleImplementing<MissileLauncher>() is MissileLauncher ml && ml.MissileReferenceTransform != null) { origin = ml.MissileReferenceTransform.position; fwd = ml.MissileReferenceTransform.forward; return; }
+            if (p.FindModuleImplementing<MissileBase>() is MissileBase mb) { origin = mb.transform.position; fwd = HighLogic.LoadedSceneIsFlight ? mb.GetForwardTransform() : mb.transform.forward; return; }
+            var hc = HullCam.Find(p);
+            if (hc != null) { HullCam.Ray(hc, out origin, out fwd); return; }
+            var tgp = p.FindModuleImplementing<ModuleTargetingCamera>();
+            var tr = tgp != null && tgp.cameraParentTransform != null ? tgp.cameraParentTransform : p.transform;
+            origin = tr.position; fwd = tr.forward;
+        }
+    }
+
     /// <summary>Finds and drives every IR turret on every loaded craft.</summary>
     [KSPAddon(KSPAddon.Startup.Flight, false)]
     public class IRTurretController : MonoBehaviour
@@ -116,6 +217,7 @@ namespace BDArmory.Avionics
         class Turret
         {
             public Vessel vessel;
+            public ModuleIRTurret settings;
             public readonly List<Joint> joints = new(); // base first
             public Part aimPart;
             public ModuleWeapon weapon;
@@ -142,42 +244,24 @@ namespace BDArmory.Avionics
         void Rebuild()
         {
             turrets.Clear();
-            var used = new HashSet<string>();
             foreach (var v in FlightGlobals.VesselsLoaded)
             {
                 if (v == null || v.packed) continue;
-                // Guns first, then launchers, then cameras: if a turret carries several, the gun aims it.
-                var candidates = new List<(Part p, int prio)>();
-                foreach (var p in v.parts)
+                foreach (var d in TurretLogic.Detect(v.parts))
                 {
-                    if (p.FindModuleImplementing<ModuleWeapon>() is ModuleWeapon w && w.fireTransforms != null && w.fireTransforms.Length > 0) candidates.Add((p, 0));
-                    else if (p.FindModuleImplementing<MissileBase>() is MissileBase mb && !mb.HasFired) candidates.Add((p, 1));
-                    else if (HullCam.Find(p) != null || p.FindModuleImplementing<ModuleTargetingCamera>() != null) candidates.Add((p, 2));
-                }
-                candidates.Sort((a, b) => a.prio.CompareTo(b.prio));
-                foreach (var (p, _) in candidates)
-                {
-                    var chain = new List<Joint>();
-                    for (var q = p.parent; q != null; q = q.parent)
+                    var t = new Turret { vessel = v, aimPart = d.aimPart, settings = d.Settings };
+                    foreach (var (part, servo, module) in d.chain)
                     {
-                        var m = q.FindModuleImplementing<ModuleIRTurret>();
-                        if (m == null || !m.aiming) continue;
-                        var servo = IRServo.Find(q);
-                        if (servo == null || !IRServo.Rotational(servo)) continue;
-                        if (!jointCache.TryGetValue(q, out var j)) jointCache[q] = j = new Joint();
-                        j.module = m; j.servo = servo;
-                        chain.Insert(0, j);
+                        if (!jointCache.TryGetValue(part, out var j)) jointCache[part] = j = new Joint();
+                        j.module = module; j.servo = servo;
+                        if (module.direction != 0) { j.sign = module.direction; j.calibrated = true; j.probing = false; } // set in the SPH/VAB tool
+                        t.joints.Add(j);
                     }
-                    if (chain.Count == 0) continue;
-                    string key = string.Join(",", chain.ConvertAll(j => j.servo.part.persistentId.ToString()));
-                    if (!used.Add(key)) continue; // this turret already has an aim part
-                    var t = new Turret { vessel = v, aimPart = p };
-                    t.joints.AddRange(chain);
-                    t.weapon = p.FindModuleImplementing<ModuleWeapon>();
+                    t.weapon = d.kind == 0 ? d.aimPart.FindModuleImplementing<ModuleWeapon>() : null;
                     if (t.weapon != null && t.weapon.customTurretID <= 0) t.weapon.customTurretID = GunTurretID;
-                    t.missile = t.weapon == null ? p.FindModuleImplementing<MissileBase>() : null;
-                    t.hullcam = t.weapon == null && t.missile == null ? HullCam.Find(p) : null;
-                    t.tgp = t.weapon == null && t.missile == null && t.hullcam == null ? p.FindModuleImplementing<ModuleTargetingCamera>() : null;
+                    t.missile = d.kind == 1 ? d.aimPart.FindModuleImplementing<MissileBase>() : null;
+                    t.hullcam = d.kind == 2 ? HullCam.Find(d.aimPart) : null;
+                    t.tgp = d.kind == 2 && t.hullcam == null ? d.aimPart.FindModuleImplementing<ModuleTargetingCamera>() : null;
                     turrets.Add(t);
                 }
             }
@@ -185,12 +269,7 @@ namespace BDArmory.Avionics
 
         static void AimRay(Turret t, out Vector3 origin, out Vector3 fwd)
         {
-            if (t.weapon != null) { var ft = t.weapon.fireTransforms[0]; origin = ft.position; fwd = ft.forward; return; }
-            if (t.missile is MissileLauncher ml && ml.MissileReferenceTransform != null) { origin = ml.MissileReferenceTransform.position; fwd = ml.MissileReferenceTransform.forward; return; }
-            if (t.missile != null) { origin = t.missile.transform.position; fwd = t.missile.GetForwardTransform(); return; }
-            if (t.hullcam != null) { HullCam.Ray(t.hullcam, out origin, out fwd); return; }
-            var tr = t.tgp.cameraParentTransform != null ? t.tgp.cameraParentTransform : t.tgp.part.transform;
-            origin = tr.position; fwd = tr.forward;
+            TurretLogic.AimRay(t.aimPart, out origin, out fwd);
         }
 
         // ---- Driving ----
@@ -200,7 +279,7 @@ namespace BDArmory.Avionics
             if (t.vessel == null || t.aimPart == null || t.aimPart.vessel != t.vessel || (t.missile != null && t.missile.HasFired)) { nextRebuild = 0; return; }
             if (!AimPoint(t, out Vector3 aim, out string what))
             {
-                foreach (var j in t.joints) { j.module.status = $"{t.Kind}: no target"; Command(j, IRServo.Rest(j.servo), IRServo.Speed(j.servo) * 0.5f); }
+                foreach (var j in t.joints) { j.module.status = $"{t.Kind}: no target"; if (t.settings.restWhenIdle) Command(j, IRServo.Rest(j.servo), IRServo.Speed(j.servo) * 0.5f); }
                 lines.Remove(t);
                 return;
             }
@@ -220,12 +299,12 @@ namespace BDArmory.Avionics
                 Vector3 fp = Vector3.ProjectOnPlane(f, axis), dp = Vector3.ProjectOnPlane(d, axis);
                 if (fp.sqrMagnitude < 1e-4f || dp.sqrMagnitude < 1e-4f) continue;
                 float phi = Vector3.SignedAngle(fp, dp, axis); // degrees to turn about this axis
-                if (Mathf.Abs(phi) < 0.15f) { j.module.status = $"{t.Kind} on {what}, err {err:F1}°"; continue; }
+                if (Mathf.Abs(phi) < t.settings.deadband) { j.module.status = $"{t.Kind} on {what}, err {err:F1}°"; continue; }
                 float target = pos + j.sign * phi;
                 float min = IRServo.Min(j.servo), max = IRServo.Max(j.servo);
                 if (max > min && max - min < 359f) target = Mathf.Clamp(target, min, max);
                 // Slow down near the target so the servo stops on it instead of overshooting and hunting.
-                float speed = IRServo.MaxSpeed(j.servo) * Mathf.Clamp(Mathf.Abs(phi) / 20f, 0.08f, 1f);
+                float speed = IRServo.MaxSpeed(j.servo) * t.settings.slewLimit / 100f * Mathf.Clamp(Mathf.Abs(phi) / Mathf.Max(1f, t.settings.slowAngle), 0.08f, 1f);
                 Command(j, target, speed);
                 j.module.status = $"{t.Kind} on {what}, err {err:F1}°";
             }
@@ -278,26 +357,45 @@ namespace BDArmory.Avionics
         static bool AimPoint(Turret t, out Vector3 point, out string what)
         {
             point = default; what = "";
+            foreach (var (id, on) in TurretLogic.ParsePriority(t.settings.priority))
+            {
+                if (!on || !Source(t, id, out point)) continue;
+                if (t.settings.maxRangeKm > 0 && (point - t.aimPart.transform.position).magnitude > t.settings.maxRangeKm * 1000f) continue;
+                what = TurretLogic.SourceNames[id];
+                return true;
+            }
+            return false;
+        }
+
+        static bool Source(Turret t, string id, out Vector3 point)
+        {
+            point = default;
             var v = t.vessel;
             var wm = v.ActiveController().WM;
-            if (v == FlightGlobals.ActiveVessel && EOIRView.TryTrack(out var trackPos, out var trackVel))
-            { point = t.hullcam != null ? trackPos : Lead(t, trackPos, trackVel); what = "track"; return true; }
-            if (wm != null && wm.guardMode && wm.currentTarget != null && wm.currentTarget.Vessel != null)
+            switch (id)
             {
-                var tv = wm.currentTarget.Vessel;
-                point = t.weapon != null && t.weapon.finalAimTarget != Vector3.zero && (t.weapon.finalAimTarget - (Vector3)tv.CoM).sqrMagnitude < 2000f * 2000f
-                    ? t.weapon.finalAimTarget : Lead(t, tv.CoM, tv.Velocity());
-                what = "guard target"; return true;
+                case "track":
+                    if (v != FlightGlobals.ActiveVessel || !EOIRView.TryTrack(out var trackPos, out var trackVel)) return false;
+                    point = t.hullcam != null ? trackPos : Lead(t, trackPos, trackVel); return true;
+                case "guard":
+                    if (wm == null || !wm.guardMode || wm.currentTarget == null || wm.currentTarget.Vessel == null) return false;
+                    var tv = wm.currentTarget.Vessel;
+                    point = t.weapon != null && t.weapon.finalAimTarget != Vector3.zero && (t.weapon.finalAimTarget - (Vector3)tv.CoM).sqrMagnitude < 2000f * 2000f
+                        ? t.weapon.finalAimTarget : Lead(t, tv.CoM, tv.Velocity());
+                    return true;
+                case "radar":
+                    if (wm == null || wm.vesselRadarData == null || !wm.vesselRadarData.locked) return false;
+                    var td = wm.vesselRadarData.lockedTargetData.targetData;
+                    if (!td.exists) return false;
+                    point = Lead(t, td.predictedPosition, td.velocity); return true;
+                case "tgp":
+                    foreach (var cam in VesselModuleRegistry.GetModules<ModuleTargetingCamera>(v))
+                        if (cam != null && cam != t.tgp && cam.cameraEnabled && cam.groundStabilized) { point = cam.groundTargetPosition; return true; }
+                    return false;
+                case "selected":
+                    if (v != FlightGlobals.ActiveVessel || AvionicsContacts.Selected is not Contact c) return false;
+                    point = c.vessel != null ? Lead(t, c.vessel.CoM, c.vessel.Velocity()) : c.position; return true;
             }
-            if (wm != null && wm.vesselRadarData != null && wm.vesselRadarData.locked)
-            {
-                var td = wm.vesselRadarData.lockedTargetData.targetData;
-                if (td.exists) { point = Lead(t, td.predictedPosition, td.velocity); what = "radar lock"; return true; }
-            }
-            foreach (var cam in VesselModuleRegistry.GetModules<ModuleTargetingCamera>(v))
-                if (cam != null && cam != t.tgp && cam.cameraEnabled && cam.groundStabilized) { point = cam.groundTargetPosition; what = "TGP point"; return true; }
-            if (v == FlightGlobals.ActiveVessel && AvionicsContacts.Selected is Contact c)
-            { point = c.vessel != null ? Lead(t, c.vessel.CoM, c.vessel.Velocity()) : c.position; what = "selected"; return true; }
             return false;
         }
 
