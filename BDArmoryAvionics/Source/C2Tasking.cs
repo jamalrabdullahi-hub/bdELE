@@ -122,8 +122,15 @@ namespace BDArmory.Avionics
 
         public static void RTB(Vessel v)
         {
+            var home = HomeOf(v);
+            // Land at the runway nearest home (its published approach, sequenced by ATC); with no runway, orbit home.
+            if (v != null && !v.LandedOrSplashed && AirOps.PilotOf(v) != null)
+            {
+                Orders.Remove(v);
+                if (AirOps.StartLanding(v, v.mainBody.GetWorldSurfacePosition(home.x, home.y, 0))) return;
+            }
             var o = New(v, C2Task.RTB);
-            o.route.Add(HomeOf(v));
+            o.route.Add(home);
             AI(v)?.CommandFlyTo(o.route[0]);
         }
 

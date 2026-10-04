@@ -33,6 +33,7 @@ namespace BDArmory.Avionics
             if (body == FlightGlobals.GetHomeBody())
                 list.Add(new Runway { name = "KSC", body = body, latA = -0.0486, lonA = -74.7247, latB = -0.0502, lonB = -74.4910 });
             list.AddRange(FactionsScenario.RunwaysFor(body, team)); // faction bases (Kerbal Konstructs runways)
+            list.AddRange(AirfieldsScenario.RunwaysFor(body, team)); // runways drawn in the Airfields window
             if (team != null)
             {
                 var gps = BDATargetManager.GPSTargetList(team);
@@ -48,19 +49,29 @@ namespace BDArmory.Avionics
             return list;
         }
 
-        /// <summary>Nearest runway, oriented so the approach needs the least turning from where the aircraft is.</summary>
-        public static Runway Best(Vessel v, BDArmory.Competition.BDTeam team)
+        public static string BaseName(string n) => n != null && n.EndsWith(" (rev)") ? n.Substring(0, n.Length - 6) : n;
+        public static bool IsReversed(string n) => n != null && n.EndsWith(" (rev)");
+
+        /// <summary>
+        /// Runway nearest to <paramref name="near"/> (world position; default the aircraft). Direction: the one ATC already uses there,
+        /// else an end with a published approach, else the end whose final fix is nearest the aircraft.
+        /// </summary>
+        public static Runway Best(Vessel v, BDArmory.Competition.BDTeam team, Vector3d? near = null)
         {
-            Runway best = null; double bestD = double.MaxValue;
+            Vector3d refPos = near ?? v.CoMD;
+            Runway field = null; double bestD = double.MaxValue;
             foreach (var r in All(v.mainBody, team))
-                foreach (var rr in new[] { r, r.Reversed })
-                {
-                    Vector3d dir = (rr.B - rr.A).normalized;
-                    Vector3d faf = rr.A - dir * 8000;
-                    double d = (faf - v.CoMD).magnitude;
-                    if (d < bestD) { bestD = d; best = rr; }
-                }
-            return best;
+            {
+                double d = (((r.A + r.B) * 0.5) - refPos).magnitude;
+                if (d < bestD) { bestD = d; field = r; }
+            }
+            if (field == null) return null;
+            var active = ATC.ActiveDirection(field.name);
+            if (active.HasValue) return active.Value ? field.Reversed : field;
+            bool fwdApp = AirfieldsScenario.ApproachFor(field) != null, revApp = AirfieldsScenario.ApproachFor(field.Reversed) != null;
+            if (fwdApp != revApp) return fwdApp ? field : field.Reversed;
+            double Faf(Runway rr) => ((rr.A - (rr.B - rr.A).normalized * 8000) - v.CoMD).magnitude;
+            return Faf(field) <= Faf(field.Reversed) ? field : field.Reversed;
         }
     }
 
@@ -130,6 +141,11 @@ namespace BDArmory.Avionics
             public float tankerSpeed;
             public float smoothedSpeed = -1;
             public float lastLog;
+            // Landing: published approach fixes (lat, lon, alt ASL), ATC state
+            public List<Vector3d> fixes;
+            public int fixIndex;
+            public bool cleared, landTold, forceGoAround;
+            public float finalDistance = float.MaxValue;
         }
 
         public static readonly Dictionary<BDModulePilotAI, Op> Ops = new();
@@ -150,16 +166,19 @@ namespace BDArmory.Avionics
             };
         }
 
-        public static bool StartLanding(Vessel v)
+        /// <summary>Land at the runway nearest the aircraft (or nearest <paramref name="near"/>, e.g. home for RTB), via its published approach.</summary>
+        public static bool StartLanding(Vessel v, Vector3d? near = null)
         {
             var ai = PilotOf(v);
             if (ai == null) { Msg("No pilot AI on this craft"); return false; }
             var team = v.ActiveController().WM?.Team;
-            var rw = Runways.Best(v, team);
-            if (rw == null) { Msg("No runway: drop GPS points named \"<name> RWY A\" and \"<name> RWY B\" on the runway ends"); return false; }
-            Ops[ai] = new Op { kind = AirOpKind.Landing, runway = rw, phase = "approach", phaseStart = Time.time };
+            var rw = Runways.Best(v, team, near);
+            if (rw == null) { Msg("No runway: draw one in the Airfields window"); return false; }
+            var app = AirfieldsScenario.ApproachFor(rw);
+            Ops[ai] = new Op { kind = AirOpKind.Landing, runway = rw, phase = "procedure", phaseStart = Time.time, fixes = app != null ? new List<Vector3d>(app.fixes) : null };
             ai.ActivatePilot();
-            Log(v, $"landing at {rw.name}");
+            ATC.Request(v, rw);
+            Log(v, $"landing at {rw.name}{(app != null ? $" via {app.name}" : "")}");
             return true;
         }
 
@@ -199,6 +218,7 @@ namespace BDArmory.Avionics
             if (ai == null || !Ops.TryGetValue(ai, out var o)) return;
             if (o.probe != null) Invoke(o.probe, "Deactivate");
             Ops.Remove(ai);
+            if (o.kind == AirOpKind.Landing) ATC.Done(v, null);
             v.ActionGroups.SetGroup(KSPActionGroup.Brakes, false);
         }
 
@@ -208,6 +228,7 @@ namespace BDArmory.Avionics
             if (!Ops.TryGetValue(ai, out var op)) return false;
             if (ai.vessel == null || !ai.vessel.loaded) { Ops.Remove(ai); return false; }
             Prepare(ai, lowFlying: op.kind == AirOpKind.Landing);
+            if (op.kind == AirOpKind.Landing && op.phase == "vacate") belowMinAltitude(ai) = true;
             bool keep = op.kind switch
             {
                 AirOpKind.Landing => Landing(ai, s, op),
@@ -215,7 +236,7 @@ namespace BDArmory.Avionics
                 _ => Tanker(ai, s, op),
             };
             Finish(ai, s);
-            if (!keep) Ops.Remove(ai);
+            if (!keep) { Ops.Remove(ai); if (op.kind == AirOpKind.Landing) ATC.Done(ai.vessel, null); }
             return true;
         }
 
@@ -247,9 +268,44 @@ namespace BDArmory.Avionics
             float tanG = Mathf.Tan(GlideSlopeDeg * Mathf.Deg2Rad);
             float glideHeight = Mathf.Max(0, -along) * tanG;
             Telemetry(ai, op, $"along {along:F0} m, lateral {lateral:F1} m, height {height:F0} m (glide {glideHeight:F0}), {v.srfSpeed:F0} m/s");
+            op.finalDistance = op.phase == "final" ? -along : float.MaxValue;
+            if (op.forceGoAround) { op.forceGoAround = false; if (op.phase == "final" || op.phase == "flare") { ATC.GoAround(v, "as instructed"); SetPhase(ai, op, "go-around"); } }
 
             switch (op.phase)
             {
+                case "procedure":
+                    {
+                        // Wait for ATC: hold at the first fix (or 15 km out on the centreline), stacked by sequence number.
+                        if (!op.cleared) op.cleared = ATC.ClearApproach(v, rw);
+                        if (!op.cleared)
+                        {
+                            var bd = v.mainBody;
+                            Vector3 holdFix = op.fixes != null && op.fixes.Count > 0 ? (Vector3)bd.GetWorldSurfacePosition(op.fixes[0].x, op.fixes[0].y, 0) : td - d * 15000f;
+                            float holdAlt = (float)rw.Elevation + ATC.HoldAltitude(v);
+                            Status(ai, $"Holding #{ATC.Number(v)} at {holdAlt:F0} m");
+                            Vector3 radial = Vector3.ProjectOnPlane((Vector3)v.CoM - holdFix, up);
+                            if (radial.sqrMagnitude < 1) radial = right;
+                            radial.Normalize();
+                            Vector3 tangent = Vector3.Cross(up, radial); // anticlockwise seen from above: left-hand racetrack
+                            const float R = 3500f;
+                            Vector3 onCircle = holdFix + (radial * Mathf.Cos(0.5f) + tangent * Mathf.Sin(0.5f)) * R;
+                            Vector3 aim = onCircle + up * (holdAlt - (float)bd.GetAltitude(onCircle));
+                            Fly(ai, s, aim, corrections: true);
+                            Throttle(ai, approachSpeed * 1.5f, true, false);
+                            return true;
+                        }
+                        if (op.fixes == null || op.fixIndex >= op.fixes.Count) { SetPhase(ai, op, "approach"); return true; }
+                        var f = op.fixes[op.fixIndex];
+                        Vector3 fix = v.mainBody.GetWorldSurfacePosition(f.x, f.y, f.z);
+                        Status(ai, $"Landing: fix {op.fixIndex + 1}/{op.fixes.Count} {AvionicsDraw.FormatRange(((Vector3)v.CoM - fix).magnitude)}");
+                        Fly(ai, s, fix, corrections: true);
+                        Throttle(ai, approachSpeed * (op.fixIndex == 0 ? 1.6f : 1.3f), true, false);
+                        // Reached (inside 1.2 km), or passed it heading for the next one.
+                        Vector3 toFix = Vector3.ProjectOnPlane(fix - (Vector3)v.CoM, up);
+                        bool passed = toFix.magnitude < 3000f && Vector3.Dot(toFix, Vector3.ProjectOnPlane((Vector3)v.srf_velocity, up)) < 0;
+                        if (toFix.magnitude < 1200f || passed) op.fixIndex++;
+                        return true;
+                    }
                 case "approach":
                     {
                         Status(ai, $"Landing: approach {rw.name}");
@@ -273,6 +329,8 @@ namespace BDArmory.Avionics
                         Fly(ai, s, aim, corrections: false);
                         Throttle(ai, approachSpeed, true, false);
                         if (along > -4500f) v.ActionGroups.SetGroup(KSPActionGroup.Gear, true);
+                        // Landing clearance by 2.5 km out, or go around.
+                        if (along > -2500f && !ATC.ClearToLand(v, rw, ref op.landTold)) { ATC.GoAround(v, "runway occupied"); SetPhase(ai, op, "go-around"); return true; }
                         // Go around if badly off the path close in, or floating long.
                         if ((along > -900f && (Mathf.Abs(lateral) > 45f || height - glideHeight > 60f || height - glideHeight < -30f)) || (along > 400f && height > 25f))
                         { SetPhase(ai, op, "go-around"); return true; }
@@ -298,14 +356,32 @@ namespace BDArmory.Avionics
                         Throttle(ai, 0, true, false, 0f);
                         v.ActionGroups.SetGroup(KSPActionGroup.Brakes, true);
                         GroundSteer(ai, s, d, td, float.NaN); // neutral elevator, track the centreline
-                        if (v.srfSpeed < 2f)
+                        if (v.srfSpeed < 8f) { v.ActionGroups.SetGroup(KSPActionGroup.Brakes, false); SetPhase(ai, op, "vacate"); }
+                        return true;
+                    }
+                case "vacate":
+                    {
+                        // Turn off the runway to the right and roll clear of it, then stop.
+                        Status(ai, "Vacating the runway");
+                        bool clear = Mathf.Abs(lateral) > 70f || Time.time - op.phaseStart > 45f;
+                        if (clear || v.Splashed)
                         {
-                            ai.standbyMode = true;
-                            ai.ReleaseCommand();
-                            Status(ai, "Landed");
-                            Log(v, $"landed at {rw.name}");
-                            return false;
+                            Throttle(ai, 0, true, false, 0f);
+                            v.ActionGroups.SetGroup(KSPActionGroup.Brakes, true);
+                            if (v.srfSpeed < 1f || Time.time - op.phaseStart > 60f)
+                            {
+                                ai.standbyMode = true;
+                                ai.ReleaseCommand();
+                                Status(ai, "Landed");
+                                Log(v, $"landed at {rw.name}");
+                                ATC.Done(v, $"welcome to {Runways.BaseName(rw.name)}");
+                                return false;
+                            }
+                            return true;
                         }
+                        Vector3 exit = (right * 0.8f + d * 0.6f).normalized; // 50° turn-off
+                        Throttle(ai, 7f, true, false);
+                        GroundSteer(ai, s, exit, (Vector3)v.CoM, float.NaN);
                         return true;
                     }
                 default: // go-around
@@ -317,6 +393,7 @@ namespace BDArmory.Avionics
                         if (v.radarAltitude > 300f && Time.time - op.phaseStart > 8f)
                         {
                             if (++op.attempts >= 3) { Msg($"{v.GetName()}: landing abandoned after 3 attempts"); return false; }
+                            op.landTold = false;
                             SetPhase(ai, op, "approach");
                         }
                         return true;
@@ -340,6 +417,14 @@ namespace BDArmory.Avionics
                 {
                     r = new Roll { heading = Vector3.ProjectOnPlane(v.ReferenceTransform.up, up).normalized, origin = v.CoMD };
                     rolls[ai] = r;
+                }
+                if (v.srfSpeed < 5f && r.rotateT0 < 0 && !ATC.CanDepart(v))
+                {
+                    s.mainThrottle = 0f;
+                    v.ActionGroups.SetGroup(KSPActionGroup.Brakes, true);
+                    GroundSteer(ai, s, r.heading, (Vector3)r.origin, float.NaN);
+                    Status(ai, "Holding: traffic on final");
+                    return;
                 }
                 v.ActionGroups.SetGroup(KSPActionGroup.Brakes, false);
                 float pitch = 0f;
