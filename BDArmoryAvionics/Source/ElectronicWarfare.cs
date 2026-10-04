@@ -259,7 +259,7 @@ namespace BDArmory.Avionics
                 foreach (var j in VesselModuleRegistry.GetModules<ModuleECMJammer>(v))
                 {
                     if (j == null || j.isMissileECM || j.alwaysOn) continue;
-                    if (mode == "Barrage" && !j.jammerEnabled) j.EnableJammer();
+                    if ((mode == "Barrage" || mode == "Deception") && !j.jammerEnabled) j.EnableJammer();
                     else if (mode == "Silent" && j.jammerEnabled) j.DisableJammer();
                 }
             }
@@ -274,7 +274,7 @@ namespace BDArmory.Avionics
         [HarmonyPatch(typeof(MissileFire), nameof(MissileFire.StopECM))]
         static class Patch_StopECM
         {
-            static bool Prefix(MissileFire __instance) => JammerMode(__instance.vessel) != "Barrage";
+            static bool Prefix(MissileFire __instance) { var m = JammerMode(__instance.vessel); return m != "Barrage" && m != "Deception"; }
         }
 
         // ---- EW window ----
@@ -304,8 +304,14 @@ namespace BDArmory.Avionics
             y += 18;
             AvionicsSettings.RadarTerrainMask = GUI.Toggle(new Rect(8, y, 150, 20), AvionicsSettings.RadarTerrainMask, AvionicsSettings.RadarTerrainMask ? "Terrain masking ON" : "Terrain masking off", AvionicsSettings.RadarTerrainMask ? sel : btn);
             var se = SensorEngine.Latest;
-            AvionicsDraw.ColorLabel(new Rect(164, y + 3, w - 156, 16), $"Engine: {SensorEngine.Threads} threads, {se.ms:F1} ms/cycle, {se.pairs} pairs, {se.masked.Count} masked, {TerrainGrid.TileCount} tiles (+{TerrainGrid.Pending})", small, AvionicsDraw.ScopeText);
+            AvionicsDraw.ColorLabel(new Rect(164, y + 3, w - 156, 16), $"Engine: {SensorEngine.Threads} threads, {se.ms:F1} ms/cycle, {se.pairs} pairs, {se.masked.Count} masked, {se.undetected.Count} faded, {TerrainGrid.TileCount} tiles", small, AvionicsDraw.ScopeText);
             y += 24;
+            if (se.burnThrough.Count > 0)
+            {
+                float minBt = float.MaxValue; foreach (var b in se.burnThrough) minBt = Mathf.Min(minBt, b.burnM);
+                AvionicsDraw.ColorLabel(new Rect(8, y, w, 16), $"Your jammer: enemy radars burn through inside {AvionicsDraw.FormatRange(minBt)} ({se.burnThrough.Count} radars, rings on the C2 map)", small, AvionicsDraw.Unknown);
+                y += 18;
+            }
 
             AvionicsSettings.EWLinkJamming = GUI.Toggle(new Rect(8, y, (w - 4) / 2, 20), AvionicsSettings.EWLinkJamming, "Jamming cuts links", AvionicsSettings.EWLinkJamming ? sel : btn);
             AvionicsSettings.EWESM = GUI.Toggle(new Rect(12 + (w - 4) / 2, y, (w - 4) / 2, 20), AvionicsSettings.EWESM, "ESM emitter tracks", AvionicsSettings.EWESM ? sel : btn); y += 26;

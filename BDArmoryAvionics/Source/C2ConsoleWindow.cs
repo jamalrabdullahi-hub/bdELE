@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
+using BDArmory.Extensions;
 using BDArmory.UI;
 
 namespace BDArmory.Avionics
@@ -122,6 +123,7 @@ namespace BDArmory.Avionics
             AvionicsDraw.ColorLabel(new Rect(x + 4, r.y + 3, 110, 16), source == MapSource.SCANsat ? "SCANsat" : source == MapSource.KerbNet ? "KerbNet" : "Grid only", AvionicsDraw.LabelSmall, AvionicsDraw.ScopeText); x += 100;
             if (GUI.Button(new Rect(x, r.y, 56, 20), "Rings", C4ISRSettings.MapRings ? sel : btn)) C4ISRSettings.MapRings = !C4ISRSettings.MapRings; x += 58;
             if (GUI.Button(new Rect(x, r.y, 60, 20), "Tracks", C4ISRSettings.MapTracks ? sel : btn)) C4ISRSettings.MapTracks = !C4ISRSettings.MapTracks; x += 62;
+            if (GUI.Button(new Rect(x, r.y, 60, 20), "Cover", showCover ? sel : btn)) showCover = !showCover; x += 62;
             if (GUI.Button(new Rect(x, r.y, 60, 20), "Follow", follow ? sel : btn)) follow = !follow; x += 62;
             if (GUI.Button(new Rect(x, r.y, 60, 20), "GPS", C2UI.Placing == PlaceMode.DropGPS ? sel : btn)) C2UI.Placing = C2UI.Placing == PlaceMode.DropGPS ? PlaceMode.None : PlaceMode.DropGPS;
             float zx = r.xMax - 110;
@@ -200,6 +202,28 @@ namespace BDArmory.Avionics
 
                 float pxPerM = m.width / (C4ISRSettings.MapSpansKm[C4ISRSettings.MapZoomIndex] * 1000f);
                 var iads = IADSController.For(net.team);
+
+                // Radar coverage with terrain shadows (friendly radars, targets 300 m above the ground) and burn-through rings
+                var se = SensorEngine.Latest;
+                if (showCover)
+                {
+                    foreach (var cv in se.coverage.Values)
+                    {
+                        Vector2 prev = Vector2.zero;
+                        for (int a = 0; a <= 72; a++)
+                        {
+                            double brg = (a % 72) * 5 * Math.PI / 180, dist = cv.reach[a % 72], ang = dist / body.Radius;
+                            double la1 = cv.lat * Math.PI / 180, lo1 = cv.lon * Math.PI / 180;
+                            double la2 = Math.Asin(Math.Sin(la1) * Math.Cos(ang) + Math.Cos(la1) * Math.Sin(ang) * Math.Cos(brg));
+                            double lo2 = lo1 + Math.Atan2(Math.Sin(brg) * Math.Sin(ang) * Math.Cos(la1), Math.Cos(ang) - Math.Sin(la1) * Math.Sin(la2));
+                            var p = ToMap(m, body, la2 * 180 / Math.PI, lo2 * 180 / Math.PI);
+                            if (a > 0) ClipLine(m, prev, p, 1.5f, new Color(0.3f, 0.8f, 1f, 0.7f), dashed: false);
+                            prev = p;
+                        }
+                    }
+                    foreach (var bt in se.burnThrough)
+                        ClipCircle(m, ToMap(m, body, bt.lat, bt.lon), bt.burnM * pxPerM, new Color(1f, 0.6f, 0.2f, 0.8f));
+                }
 
                 // Engagement rings
                 if (C4ISRSettings.MapRings)
@@ -412,18 +436,38 @@ namespace BDArmory.Avionics
             tileBuilding = false;
         }
 
+        static bool showCover = true;
+
+        /// <summary>Threat score 0-100: hostile tracks closing fast on a friendly unit or base score highest (missiles above aircraft).</summary>
+        public static float Threat(NetTrack t, TeamNetwork net)
+        {
+            if (!t.hostile) return 0;
+            float best = 0;
+            foreach (var n in net.nodes)
+            {
+                if (n.vessel == null) continue;
+                Vector3 rel = (Vector3)n.vessel.CoM - t.position;
+                float d = Mathf.Max(200f, rel.magnitude);
+                float closing = Vector3.Dot(t.velocity - (Vector3)n.vessel.Velocity(), rel.normalized);
+                float tti = closing > 1 ? d / closing : 9999f;
+                best = Mathf.Max(best, Mathf.Clamp01(1f - tti / 300f) * 70f + Mathf.Clamp01(1f - d / 60000f) * 30f);
+            }
+            if (t.isMissile) best = Mathf.Min(100f, best * 1.5f + 20f);
+            return best;
+        }
+
         // ---- Track table ----
 
         static void DrawTable(Rect r, TeamNetwork net)
         {
             if (AvionicsDraw.Begin()) { AvionicsDraw.FilledRect(r, C2UI.Panel); AvionicsDraw.End(); }
             if (net == null) return;
-            float[] cols = [0, 46, 150, 222, 282, 330, 400, 520];
-            string[] heads = ["TRK", "CLASS", "ALT", "SPD", "HDG", "RANGE", "SOURCE", "ASSIGNED"];
+            float[] cols = [0, 40, 130, 190, 236, 270, 324, 360, 400, 500];
+            string[] heads = ["TRK", "CLASS", "ALT", "SPD", "HDG", "RANGE", "Q", "THR", "SOURCE", "ASSIGNED"];
             for (int i = 0; i < heads.Length; i++) AvionicsDraw.ColorLabel(new Rect(r.x + 6 + cols[i], r.y + 2, 120, 14), heads[i], AvionicsDraw.LabelSmall, AvionicsDraw.ScopeText);
             var list = new List<NetTrack>(net.tracks.Values);
             var refPos = C2UI.SelectedUnit != null ? C2UI.SelectedUnit.CoM : FlightGlobals.ActiveVessel != null ? FlightGlobals.ActiveVessel.CoM : Vector3.zero;
-            list.Sort((a, b) => (b.hostile ? 1 : 0).CompareTo(a.hostile ? 1 : 0) != 0 ? (b.hostile ? 1 : 0).CompareTo(a.hostile ? 1 : 0) : (a.position - refPos).sqrMagnitude.CompareTo((b.position - refPos).sqrMagnitude));
+            list.Sort((a, b) => Threat(b, net).CompareTo(Threat(a, net))); // most dangerous first
             var body = FlightGlobals.currentMainBody;
             var iads = IADSController.For(net.team);
             var view = new Rect(r.x, r.y + 18, r.width, r.height - 18);
@@ -444,7 +488,9 @@ namespace BDArmory.Avionics
                 var site = iads != null ? IADSController.AssignedTo(iads, t) : null;
                 string assigned = site != null ? site.node.Name : "";
                 foreach (var o in C2Tasking.Orders) if (o.Value.track == t && o.Key != null) assigned += (assigned.Length > 0 ? ", " : "") + o.Key.GetName();
-                string[] cells = [t.Label, C2UI.TrackClass(t), AvionicsDraw.FormatAlt(alt), $"{v.magnitude:F0}", $"{hdg:000}", AvionicsDraw.FormatRange((t.position - refPos).magnitude), t.SourceString, assigned];
+                float q = SensorEngine.Quality(net.team.Name, t.vessel);
+                float thr = Threat(t, net);
+                string[] cells = [t.Label, C2UI.TrackClass(t), AvionicsDraw.FormatAlt(alt), $"{v.magnitude:F0}", $"{hdg:000}", AvionicsDraw.FormatRange((t.position - refPos).magnitude), q < 0 ? "-" : $"{q * 100:F0}", t.hostile ? $"{thr:F0}" : "", t.SourceString, assigned];
                 for (int c = 0; c < cells.Length; c++)
                     AvionicsDraw.ColorLabel(new Rect(6 + cols[c], y, (c + 1 < cols.Length ? cols[c + 1] - cols[c] : 200) - 4, 16), cells[c], AvionicsDraw.LabelSmall, c == 1 ? C2UI.TrackColor(t) : AvionicsDraw.HudText);
             }

@@ -31,8 +31,8 @@ namespace BDArmory.Avionics
 
         // Auto: BDArmory guard mode switches jammers on when threatened. Barrage: jam continuously (EW aircraft). Silent: never jam.
         [KSPField(isPersistant = true, guiActive = true, guiActiveEditor = true, guiName = "Jammers", groupName = "c4isr"),
-         UI_ChooseOption(options = ["Auto", "Barrage", "Silent"], scene = UI_Scene.All)]
-        public string jammer = "Auto";
+         UI_ChooseOption(options = ["Auto", "Barrage", "Deception", "Silent"], scene = UI_Scene.All)]
+        public string jammer = "Auto"; // Deception: jams continuously and walks enemy locks off (range-gate pull-off) until burned through
 
         [KSPField(guiActive = true, guiActiveEditor = false, guiName = "Network", groupName = "c4isr")]
         public string status = "-";
