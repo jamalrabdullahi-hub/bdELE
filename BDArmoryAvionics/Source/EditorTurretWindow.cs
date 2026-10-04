@@ -84,6 +84,22 @@ namespace BDArmory.Avionics
         void Update()
         {
             LockEditor();
+            // Pick an animation servo: click any IR servo part on the craft.
+            if (picking && Show && Input.GetMouseButtonDown(0) && !rect.Contains(new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y)))
+            {
+                var hp = Mouse.HoveredPart;
+                var m = hp != null ? hp.FindModuleImplementing<ModuleIRTurret>() : null;
+                var sv = hp != null ? IRServo.Find(hp) : null;
+                if (m != null && sv != null && sel < defs.Count)
+                {
+                    uint id = defs[sel].chain[0].part.persistentId; float p0 = Pos(sv);
+                    ForSym(m, x => { x.animTurret = id; x.gantry = true; x.gStowed = p0; x.gDeployed = p0; });
+                    ScreenMessages.PostScreenMessage($"{hp.partInfo.title} added to the turret's animation", 2f, ScreenMessageStyle.UPPER_CENTER);
+                    nextDetect = 0;
+                }
+                else ScreenMessages.PostScreenMessage("That isn't an Infernal Robotics servo", 2f, ScreenMessageStyle.UPPER_CENTER);
+                picking = false;
+            }
             if (wasShown && !Show) ResetPose(); // closing the tool puts the turret back as built
             wasShown = Show;
             if (!Show || EditorLogic.fetch == null || EditorLogic.fetch.ship == null) return;
@@ -131,11 +147,14 @@ namespace BDArmory.Avionics
             return v;
         }
 
+        public static bool DesignMode = true; // VAB: no 0-360 wrapping or soft clamping while posing / testing (IR's hardware range still applies)
+        bool picking;
+
         void SetPos(PartModule s, float v)
         {
             Pos(s); // records the original
-            if (IRServo.Continuous(s)) v = Mathf.Repeat(v, 360f); // full rotation: 0..360, 361 = 1
-            else v = Mathf.Clamp(v, IRServo.Min(s), IRServo.Max(s));
+            if (!IRServo.Continuous(s)) v = Mathf.Clamp(v, IRServo.Min(s), IRServo.Max(s));
+            else if (!DesignMode) v = Mathf.Repeat(v, 360f); // full rotation: 0..360, 361 = 1
             IRServo.EditorSetTo(s, v);
             pose[s] = v;
             coverage = null;
@@ -235,12 +254,15 @@ namespace BDArmory.Avionics
             if (Fold(ref y, w, $"GANTRY / DEPLOY ({t.gantry.Count} servo)", ref openGantry))
             {
                 AvionicsDraw.ColorLabel(new Rect(0, y, w, 30), "Lifts, arms or doors that bring the turret out before it aims. Linear servos\non the mount are gantry automatically; rotary ones: 'Make gantry' below.", small, AvionicsDraw.ScopeText); y += 32;
-                s.gantryOn = GUI.Toggle(new Rect(0, y, w, 20), s.gantryOn, s.gantryOn ? "Gantry sequence ON" : "Gantry sequence OFF (always out)", s.gantryOn ? on : btn); y += 24;
+                s.gantryOn = GUI.Toggle(new Rect(0, y, w / 2 - 3, 20), s.gantryOn, s.gantryOn ? "Sequence ON" : "Sequence OFF (always out)", s.gantryOn ? on : btn);
+                if (GUI.Button(new Rect(w / 2, y, w / 2, 20), picking ? "Click a servo on the craft…" : "Pick servo ▸ (hatch, sheath…)", picking ? on : btn)) picking = !picking;
+                y += 24;
                 foreach (var (gp, gs, gm) in t.gantry)
                 {
                     float gpos = Pos(gs);
                     AvionicsDraw.ColorLabel(new Rect(0, y, w - 70, 16), $"{gp.partInfo.title}  at {gpos:F1}  (stowed {gm.gStowed:F1}, out {gm.gDeployed:F1}, after {gm.gDelay:F1} s)", small, AvionicsDraw.HudText);
-                    if (IRServo.Rotational(gs) && GUI.Button(new Rect(w - 66, y - 2, 66, 18), "Make aim", btn)) { ForSym(gm, m => m.gantry = false); nextDetect = 0; }
+                    if (gm.animTurret != 0) { if (GUI.Button(new Rect(w - 66, y - 2, 66, 18), "Remove", btn)) { ForSym(gm, m => { m.animTurret = 0; m.gantry = false; }); nextDetect = 0; } }
+                    else if (IRServo.Rotational(gs) && GUI.Button(new Rect(w - 66, y - 2, 66, 18), "Make aim", btn)) { ForSym(gm, m => m.gantry = false); nextDetect = 0; }
                     y += 16;
                     float mn = IRServo.Min(gs), mx = IRServo.Max(gs); if (mx <= mn) { mn = gpos - 180; mx = gpos + 180; }
                     float np = GUI.HorizontalSlider(new Rect(0, y + 2, w - 200, 14), gpos, mn, mx);
@@ -257,6 +279,9 @@ namespace BDArmory.Avionics
                 if (GUI.Button(new Rect(2 * w / 3, y, w / 3, 20), "Play sequence", btn) && !playing) StartCoroutine(PlaySequence(t));
                 y += 26;
             }
+
+            DesignMode = GUI.Toggle(new Rect(0, y, w, 20), DesignMode, DesignMode ? "Design mode: no wrap/soft limits while posing (flight still uses them)" : "Design mode off: poses use flight limits", DesignMode ? on : btn);
+            y += 24;
 
             // 2. Aim test
             Head(ref y, w, "2. AIM TEST (the turret points the parts at it)");
@@ -414,6 +439,7 @@ namespace BDArmory.Avionics
                 var (_, servo, module) = t.chain[i];
                 ServoKin.Get(servo, module, out ax[i], out piv[i], out gain[i]);
                 pos0[i] = Pos(servo); lo[i] = IRServo.Min(servo); hi[i] = IRServo.Max(servo);
+                if (DesignMode && IRServo.Continuous(servo)) { lo[i] = float.NegativeInfinity; hi[i] = float.PositiveInfinity; }
                 if (hi[i] - lo[i] >= 359f || hi[i] <= lo[i]) { lo[i] = float.NegativeInfinity; hi[i] = float.PositiveInfinity; }
             }
             TurretLogic.AimRay(t.aimPart, out Vector3 o0, out Vector3 f0);

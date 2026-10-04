@@ -58,9 +58,29 @@ namespace BDArmory.Avionics
     /// darkened, with engines, hot parts and aircraft glowing) and point track: click a craft or the ground to track it.
     /// The track drives IR turrets on the craft (so a camera or gun on servos follows it) and can be sent as a GPS point or selected target.
     /// </summary>
+    /// <summary>Per HullCam: the EO/IR mode it starts in (part menu, set in the VAB) and action-group mode switches.</summary>
+    public class ModuleEOIRCamera : PartModule
+    {
+        public static readonly string[] Modes = { "EO", "WHOT", "BHOT", "IRON" };
+
+        [KSPField(isPersistant = true, guiActive = true, guiActiveEditor = true, guiName = "EO/IR default mode", groupName = "eoir", groupDisplayName = "ELE EO/IR"),
+         UI_ChooseOption(options = new[] { "EO", "WHOT", "BHOT", "IRON" }, scene = UI_Scene.All)]
+        public string defaultMode = "WHOT";
+
+        public int ModeIndex => Mathf.Max(0, System.Array.IndexOf(Modes, defaultMode));
+
+        void Set(int m) { defaultMode = Modes[m]; if (HullCam.Current != null && HullCam.Current.part == part) EOIRView.Mode = m; }
+        [KSPAction("EO/IR: EO (colour)")] public void ActEO(KSPActionParam p) => Set(0);
+        [KSPAction("EO/IR: white hot")] public void ActWHOT(KSPActionParam p) => Set(1);
+        [KSPAction("EO/IR: black hot")] public void ActBHOT(KSPActionParam p) => Set(2);
+        [KSPAction("EO/IR: iron (blue-red)")] public void ActIRON(KSPActionParam p) => Set(3);
+        [KSPAction("EO/IR: next mode")] public void ActNext(KSPActionParam p) => Set((ModeIndex + 1) % Modes.Length);
+    }
+
     [KSPAddon(KSPAddon.Startup.Flight, false)]
     public class EOIRView : MonoBehaviour
     {
+        PartModule lastCam;
         public static int Mode = 1; // 0 EO (colour), 1 WHOT, 2 BHOT
         static readonly string[] ModeNames = { "EO", "WHOT", "BHOT", "IRON" };
         static Vessel trackVessel;
@@ -203,6 +223,13 @@ namespace BDArmory.Avionics
         void OnGUI()
         {
             var hc = HullCam.Current;
+            if (hc != lastCam)
+            {
+                // switching to a camera: start in its own default mode
+                lastCam = hc;
+                var em = hc != null ? hc.part.FindModuleImplementing<ModuleEOIRCamera>() : null;
+                if (em != null) Mode = em.ModeIndex;
+            }
             if (hc == null || !BDArmorySetup.GAME_UI_ENABLED) return;
             var cam = FlightCamera.fetch.mainCamera;
             if (Event.current.type == EventType.Repaint && Mode != 0) DrawHeat(cam, hc.vessel);

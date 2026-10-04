@@ -50,6 +50,7 @@ namespace BDArmory.Avionics
         // Gantry (deploy) servos: lifts, arms, doors that move the turret out before it aims and put it away after.
         // Per servo (linear servos on the mount count as gantry automatically):
         [KSPField(isPersistant = true)] public bool gantry = false;
+        [KSPField(isPersistant = true)] public uint animTurret = 0;   // animation servo anywhere on the craft: the turret's base servo part id
         [KSPField(isPersistant = true)] public float gStowed = 0f, gDeployed = 0f, gDelay = 0f;
         // Per turret (base servo):
         [KSPField(isPersistant = true)] public bool gantryOn = true;
@@ -286,6 +287,16 @@ namespace BDArmory.Avionics
                 if (def.chain.Count == 0) continue;
                 if (!byKey.TryGetValue(def.Key, out var d)) { byKey[def.Key] = d = def; order.Add(d); }
                 d.options.Add((p, k));
+            }
+            // Animation servos picked anywhere on the craft (hatches, sheaths, covers) join their turret's deploy/stow sequence.
+            foreach (var p in parts)
+            {
+                var m = p.FindModuleImplementing<ModuleIRTurret>();
+                if (m == null || m.animTurret == 0) continue;
+                var servo = IRServo.Find(p);
+                if (servo == null) continue;
+                foreach (var d in order)
+                    if (d.chain[0].part.persistentId == m.animTurret && !d.gantry.Exists(g => g.part == p) && !d.chain.Exists(c => c.part == p)) { d.gantry.Add((p, servo, m)); break; }
             }
             foreach (var d in order)
             {
