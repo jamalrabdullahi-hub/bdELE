@@ -101,6 +101,8 @@ namespace BDArmory.Avionics
         public static bool ShowLM = false;
         public static bool MissileDLZ = true;
         public static bool ShowFeeds = false;
+        public static bool ExplosionScale = true;       // fireballs sized by warhead (cube root of TNT, 20 kg = 1x)
+        public static float ExplosionSizeCurve = 1f, ExplosionSizeCap = 6f;
         public static bool Shrapnel = true;             // fragments on every explosion, out to ShrapnelRangeMult x the blast radius
         public static float ShrapnelRangeMult = 2f;
         public static int ShrapnelPattern = 0;          // Auto, Sphere, Half sphere, Cone
@@ -198,6 +200,9 @@ namespace BDArmory.Avionics
                 ShowFeeds = GetBool(node, "ShowFeeds", ShowFeeds);
                 AutoFeeds = GetBool(node, "AutoFeeds", AutoFeeds);
                 Shrapnel = GetBool(node, "Shrapnel", Shrapnel);
+                ExplosionScale = GetBool(node, "ExplosionScale", ExplosionScale);
+                ExplosionSizeCurve = Mathf.Clamp(GetFloat(node, "ExplosionSizeCurve", ExplosionSizeCurve), 0.3f, 3f);
+                ExplosionSizeCap = Mathf.Clamp(GetFloat(node, "ExplosionSizeCap", ExplosionSizeCap), 1f, 12f);
                 ShrapnelRangeMult = Mathf.Clamp(GetFloat(node, "ShrapnelRangeMult", ShrapnelRangeMult), 1f, 4f);
                 ShrapnelPattern = Mathf.Clamp(GetInt(node, "ShrapnelPattern", ShrapnelPattern), 0, 3);
                 ThreatBanner = GetBool(node, "ThreatBanner", ThreatBanner);
@@ -288,6 +293,9 @@ namespace BDArmory.Avionics
                 node.AddValue("ShowFeeds", ShowFeeds);
                 node.AddValue("AutoFeeds", AutoFeeds);
                 node.AddValue("Shrapnel", Shrapnel);
+                node.AddValue("ExplosionScale", ExplosionScale);
+                node.AddValue("ExplosionSizeCurve", ExplosionSizeCurve);
+                node.AddValue("ExplosionSizeCap", ExplosionSizeCap);
                 node.AddValue("ShrapnelRangeMult", ShrapnelRangeMult);
                 node.AddValue("ShrapnelPattern", ShrapnelPattern);
                 node.AddValue("ThreatBanner", ThreatBanner);

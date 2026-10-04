@@ -35,7 +35,7 @@ namespace BDArmory.Avionics
 
         void Start()
         {
-            menuRect = new Rect(Screen.width - 300, 90, 240, 642);
+            menuRect = new Rect(Screen.width - 300, 90, 240, 664);
             radarRectIndex = GUIUtils.RegisterGUIRect(new Rect());
             listRectIndex = GUIUtils.RegisterGUIRect(new Rect());
             gpsRectIndex = GUIUtils.RegisterGUIRect(new Rect());
@@ -208,6 +208,8 @@ namespace BDArmory.Avionics
             ATCWindow.Show = GUI.Toggle(new Rect(12 + hw, y, hw, 20), ATCWindow.Show, "ATC", ATCWindow.Show ? sel : btn); y += 22;
             AvionicsSettings.Shrapnel = GUI.Toggle(new Rect(8, y, hw, 20), AvionicsSettings.Shrapnel, AvionicsSettings.Shrapnel ? $"Shrapnel ×{AvionicsSettings.ShrapnelRangeMult:0.#}" : "Shrapnel off", AvionicsSettings.Shrapnel ? sel : btn);
             if (GUI.Button(new Rect(12 + hw, y, hw, 20), Shrapnel.Patterns[AvionicsSettings.ShrapnelPattern], btn)) AvionicsSettings.ShrapnelPattern = (AvionicsSettings.ShrapnelPattern + 1) % Shrapnel.Patterns.Length;
+            y += 22;
+            AvionicsSettings.ExplosionScale = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.ExplosionScale, AvionicsSettings.ExplosionScale ? "Fireballs sized by warhead" : "Fireballs: BDArmory default size", AvionicsSettings.ExplosionScale ? sel : btn);
             y += 24;
             var net = DataLinkNetwork.PlayerNetwork;
             var iads = net != null ? IADSController.For(net.team) : null;
