@@ -44,6 +44,10 @@ namespace BDArmory.Avionics
         [KSPField(isPersistant = true)] public float deadband = 0.15f;        // degrees
         [KSPField(isPersistant = true)] public bool restWhenIdle = true;
         [KSPField(isPersistant = true)] public float maxRangeKm = 0f;         // 0 = no limit
+        // Missiles / SAMs on the turret: point ahead of the target and pitch up for range.
+        [KSPField(isPersistant = true)] public float loftAngle = -1f;         // degrees above the line of sight at long range; -1 = the missile's own loft (AAMLoft) else 15
+        [KSPField(isPersistant = true)] public float loftFullKm = 8f;         // full loft from this range (none inside 1.5 km)
+        [KSPField(isPersistant = true)] public bool followSelected = true;    // gun + missiles on one turret: aim with whichever the weapon manager has selected
 
         [KSPEvent(guiActive = true, guiName = "Show aim lines", groupName = "irturret")]
         public void ToggleAimLines() { IRTurretController.ShowAimLines = !IRTurretController.ShowAimLines; Events[nameof(ToggleAimLines)].guiName = IRTurretController.ShowAimLines ? "Hide aim lines" : "Show aim lines"; }
@@ -327,6 +331,7 @@ namespace BDArmory.Avionics
         {
             public Vessel vessel;
             public ModuleIRTurret settings;
+            public List<(Part part, int kind)> options = new();
             public readonly List<Joint> joints = new(); // base first
             public Part aimPart;
             public ModuleWeapon weapon;
@@ -358,21 +363,54 @@ namespace BDArmory.Avionics
                 if (v == null || v.packed) continue;
                 foreach (var d in TurretLogic.Detect(v.parts))
                 {
-                    var t = new Turret { vessel = v, aimPart = d.aimPart, settings = d.Settings };
+                    var t = new Turret { vessel = v, aimPart = d.aimPart, settings = d.Settings, options = new List<(Part, int)>(d.options) };
                     foreach (var (part, servo, module) in d.chain)
                     {
                         if (!jointCache.TryGetValue(part, out var j)) jointCache[part] = j = new Joint();
                         j.module = module; j.servo = servo;
                         t.joints.Add(j);
                     }
-                    t.weapon = d.kind == 0 ? d.aimPart.FindModuleImplementing<ModuleWeapon>() : null;
-                    if (t.weapon != null && t.weapon.customTurretID <= 0) t.weapon.customTurretID = GunTurretID;
-                    t.missile = d.kind == 1 ? d.aimPart.FindModuleImplementing<MissileBase>() : null;
-                    t.hullcam = d.kind == 2 ? HullCam.Find(d.aimPart) : null;
-                    t.tgp = d.kind == 2 && t.hullcam == null ? d.aimPart.FindModuleImplementing<ModuleTargetingCamera>() : null;
+                    foreach (var o in d.options)
+                        if (o.kind == 0 && o.part.FindModuleImplementing<ModuleWeapon>() is ModuleWeapon g && g.customTurretID <= 0) g.customTurretID = GunTurretID;
+                    SetAim(t, d.aimPart, d.kind);
                     turrets.Add(t);
                 }
             }
+        }
+
+        static void SetAim(Turret t, Part p, int kind)
+        {
+            t.aimPart = p;
+            t.weapon = kind == 0 ? p.FindModuleImplementing<ModuleWeapon>() : null;
+            t.missile = kind == 1 ? p.FindModuleImplementing<MissileBase>() : null;
+            t.hullcam = kind == 2 ? HullCam.Find(p) : null;
+            t.tgp = kind == 2 && t.hullcam == null ? p.FindModuleImplementing<ModuleTargetingCamera>() : null;
+        }
+
+        /// <summary>Gun and missiles on the same turret: aim with the one the weapon manager has selected (and the next missile on the rail).</summary>
+        static void FollowSelected(Turret t)
+        {
+            if (!t.settings.followSelected || t.settings.aimWith != "Auto" || t.options.Count < 2) return;
+            var wm = t.vessel.ActiveController().WM;
+            if (wm == null) return;
+            Part want = null; int kind = -1;
+            var sw = wm.selectedWeapon;
+            var gun = sw?.GetWeaponModule();
+            if (gun != null) { foreach (var o in t.options) if (o.part == gun.part) { want = o.part; kind = 0; break; } }
+            else if (sw != null)
+            {
+                // A missile type is selected: the current missile if it's on this turret, else any unfired one of that type here.
+                var cm = wm.CurrentMissile;
+                foreach (var o in t.options)
+                {
+                    if (o.kind != 1) continue;
+                    var mb = o.part.FindModuleImplementing<MissileBase>();
+                    if (mb == null || mb.HasFired) continue;
+                    if (cm != null && mb == cm) { want = o.part; kind = 1; break; }
+                    if (want == null && mb.GetShortName() == sw.GetShortName()) { want = o.part; kind = 1; }
+                }
+            }
+            if (want != null && want != t.aimPart) SetAim(t, want, kind);
         }
 
         static void AimRay(Turret t, out Vector3 origin, out Vector3 fwd)
@@ -385,6 +423,7 @@ namespace BDArmory.Avionics
         void Drive(Turret t)
         {
             if (t.vessel == null || t.aimPart == null || t.aimPart.vessel != t.vessel || (t.missile != null && t.missile.HasFired)) { nextRebuild = 0; return; }
+            FollowSelected(t);
             if (!AimPoint(t, out Vector3 aim, out string what))
             {
                 foreach (var j in t.joints) { j.module.status = $"{t.Kind}: no target"; if (t.settings.restWhenIdle) Command(j, IRServo.Rest(j.servo), IRServo.Speed(j.servo) * 0.5f); }
@@ -499,9 +538,10 @@ namespace BDArmory.Avionics
             return false;
         }
 
-        /// <summary>Lead for guns: where the target will be when the bullet arrives, plus drop.</summary>
+        /// <summary>Lead for guns: where the target will be when the bullet arrives, plus drop. Missiles: lead and loft.</summary>
         static Vector3 Lead(Turret t, Vector3 targetPos, Vector3 targetVel)
         {
+            if (t.missile != null) return MissileAim(t, targetPos, targetVel);
             if (t.weapon == null) return targetPos;
             Vector3 origin = t.weapon.fireTransforms[0].position;
             Vector3 relVel = targetVel - (Vector3)t.vessel.Velocity();
@@ -510,6 +550,44 @@ namespace BDArmory.Avionics
             for (int i = 0; i < 2; i++) tof = (targetPos + relVel * tof - origin).magnitude / speed;
             float g = (float)FlightGlobals.getGeeForceAtPosition(origin).magnitude;
             return targetPos + relVel * tof + (Vector3)t.vessel.upAxis * 0.5f * g * tof * tof;
+        }
+
+        /// <summary>
+        /// Missile/SAM: point at where the target will be (average missile speed from the estimator), then pitch up by the loft angle,
+        /// fading in from 1.5 km to the full-loft range so close shots go straight and long shots climb.
+        /// </summary>
+        static Vector3 MissileAim(Turret t, Vector3 targetPos, Vector3 targetVel)
+        {
+            var m = t.missile;
+            Vector3 origin = m.transform.position;
+            float range = (targetPos - origin).magnitude;
+            float avgSpeed = 600f;
+            try
+            {
+                var est = MissileEstimator.Estimate(m, origin, t.vessel.Velocity(), targetPos, targetVel, withMaxRange: false, targetId: 0);
+                if (est.valid && est.timeOfFlight > 0.1f) avgSpeed = Mathf.Max(150f, range / est.timeOfFlight);
+            }
+            catch { }
+            float tof = range / avgSpeed;
+            Vector3 aim = targetPos + (targetVel - (Vector3)t.vessel.Velocity()) * tof;
+            float loft = LoftFor(t.settings, m);
+            float k = Mathf.Clamp01((range - 1500f) / Mathf.Max(500f, t.settings.loftFullKm * 1000f - 1500f));
+            loft *= k;
+            if (loft < 0.1f) return aim;
+            Vector3 up = t.vessel.upAxis;
+            Vector3 d = aim - origin;
+            float elev = 90f - Vector3.Angle(up, d);
+            float newElev = Mathf.Min(elev + loft, 75f);
+            Vector3 right = Vector3.Cross(up, d);
+            if (right.sqrMagnitude < 1e-4f) return aim;
+            return origin + Quaternion.AngleAxis(-(newElev - elev), right.normalized) * d;
+        }
+
+        public static float LoftFor(ModuleIRTurret s, MissileBase m)
+        {
+            if (s.loftAngle >= 0) return s.loftAngle;
+            if (m != null && (m.GuidanceMode == MissileBase.GuidanceModes.AAMLoft)) return Mathf.Clamp(m.LoftAngle, 0, 60);
+            return 15f;
         }
 
         // ---- Aim lines: cyan = where it points, red = where it should ----

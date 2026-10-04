@@ -280,6 +280,14 @@ namespace BDArmory.Avionics
                 v = Slider(ref y, w, $"Start slowing {s.slowAngle:F0}° out (higher = smoother)", s.slowAngle, 2, 60); if (Mathf.Abs(v - s.slowAngle) > 0.5f) { float vv = Mathf.Round(v); ForSym(s, m => m.slowAngle = vv); }
                 v = Slider(ref y, w, $"Deadband {s.deadband:F2}° (higher = less twitch)", s.deadband, 0.05f, 2f); if (Mathf.Abs(v - s.deadband) > 0.02f) { float vv = Mathf.Round(v * 20) / 20; ForSym(s, m => m.deadband = vv); }
                 v = Slider(ref y, w, s.maxRangeKm <= 0 ? "Max target range: no limit" : $"Max target range {s.maxRangeKm:F1} km", s.maxRangeKm, 0, 20); if (Mathf.Abs(v - s.maxRangeKm) > 0.2f) { float vv = Mathf.Round(v * 2) / 2; ForSym(s, m => m.maxRangeKm = vv); }
+                AvionicsDraw.ColorLabel(new Rect(0, y, w, 14), "Missiles / SAMs", AvionicsDraw.Header, AvionicsDraw.HudText); y += 16;
+                v = Slider(ref y, w, s.loftAngle < 0 ? "Loft: auto (the missile's loft angle if it lofts, else 15°)" : $"Loft {s.loftAngle:F0}° above the target at long range", s.loftAngle, -1, 60);
+                if (Mathf.Abs(v - s.loftAngle) > 0.5f) { float vv = v < 0 ? -1 : Mathf.Round(v); ForSym(s, m => m.loftAngle = vv); }
+                v = Slider(ref y, w, $"Full loft from {s.loftFullKm:F0} km (none inside 1.5 km)", s.loftFullKm, 2, 40);
+                if (Mathf.Abs(v - s.loftFullKm) > 0.5f) { float vv = Mathf.Round(v); ForSym(s, m => m.loftFullKm = vv); }
+                bool fs = GUI.Toggle(new Rect(0, y, w, 20), s.followSelected, s.followSelected ? "Gun + missiles: aim with the selected weapon" : "Gun + missiles: always the 'Aimed by' part", s.followSelected ? on : btn);
+                if (fs != s.followSelected) ForSym(s, m => m.followSelected = fs);
+                y += 26;
                 bool rest = GUI.Toggle(new Rect(0, y, w, 20), s.restWhenIdle, s.restWhenIdle ? "No target: return to rest" : "No target: hold position", s.restWhenIdle ? on : btn);
                 if (rest != s.restWhenIdle) ForSym(s, m => m.restWhenIdle = rest);
                 y += 26;
