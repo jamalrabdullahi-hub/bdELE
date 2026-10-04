@@ -35,7 +35,7 @@ namespace BDArmory.Avionics
 
         void Start()
         {
-            menuRect = new Rect(Screen.width - 300, 90, 240, 664);
+            menuRect = new Rect(Screen.width - 300, 90, 240, 686);
             radarRectIndex = GUIUtils.RegisterGUIRect(new Rect());
             listRectIndex = GUIUtils.RegisterGUIRect(new Rect());
             gpsRectIndex = GUIUtils.RegisterGUIRect(new Rect());
@@ -211,6 +211,8 @@ namespace BDArmory.Avionics
             y += 22;
             AvionicsSettings.ExplosionScale = GUI.Toggle(new Rect(8, y, hw, 20), AvionicsSettings.ExplosionScale, AvionicsSettings.ExplosionScale ? "Sized fireballs" : "BDA fireballs", AvionicsSettings.ExplosionScale ? sel : btn);
             if (GUI.Button(new Rect(12 + hw, y, hw, 20), $"Blast FX: {ExplosionDirector.QualityNames[AvionicsSettings.ExplosionQuality]}", AvionicsSettings.ExplosionQuality > 0 ? sel : btn)) AvionicsSettings.ExplosionQuality = (AvionicsSettings.ExplosionQuality + 1) % 4;
+            y += 22;
+            AvionicsSettings.Volumetric = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.Volumetric, !VolumetricShaders.Loaded ? "Volumetric: shaders not installed" : AvionicsSettings.Volumetric ? "Volumetric explosions, haze, shockwaves" : "Volumetric off", AvionicsSettings.Volumetric && VolumetricShaders.Loaded ? sel : btn);
             y += 24;
             var net = DataLinkNetwork.PlayerNetwork;
             var iads = net != null ? IADSController.For(net.team) : null;

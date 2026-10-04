@@ -99,6 +99,7 @@ namespace BDArmory.Avionics
                 go.transform.localScale = Vector3.one * Mathf.Clamp(size / 4f, 0.5f, 6f);
                 foreach (var pe in go.GetComponentsInChildren<KSPParticleEmitter>()) { pe.emit = true; EffectBehaviour.AddParticleEmitter(pe); }
             }
+            VolumetricFX.Haze(pos, size, life);
             fires.Add(new Fire { go = go, local = root.InverseTransformPoint(pos), t0 = Time.time, life = life, size = size });
         }
 

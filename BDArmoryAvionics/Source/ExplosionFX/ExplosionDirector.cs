@@ -50,7 +50,7 @@ namespace BDArmory.Avionics
             shellMat = new Material(Shader.Find("KSP/Particles/Alpha Blended")) { mainTexture = AvionicsDraw.GlowTexture };
         }
 
-        void OnDestroy() { if (Instance == this) Instance = null; Persistent.Clear(); }
+        void OnDestroy() { if (Instance == this) Instance = null; Persistent.Clear(); VolumetricFX.Clear(); }
 
         /// <summary>Smoke (and fire, when there's no Destruction Effects flame) rising from a lingering fire.</summary>
         public void FireSmoke(Vector3 local, float size, bool ownFlames)
@@ -139,6 +139,7 @@ namespace BDArmory.Avionics
             Vector3d off = BDKrakensbane.FloatingOriginOffset;
             if (off != Vector3d.zero) transform.position -= (Vector3)off;
             Persistent.Tick();
+            VolumetricFX.Tick();
             float now = Time.time;
             for (int i = liveLights.Count - 1; i >= 0; i--)
             {
@@ -202,6 +203,10 @@ namespace BDArmory.Avionics
             Vector3 local = d.transform.InverseTransformPoint(pos);
             Vector3 drift = Vector3.ProjectOnPlane(new Vector3(0.6f, 0, 0.8f), up).normalized * 3f; // a light breeze
             LogFx(kind, tnt, k);
+            // True volumetrics (when the shader bundle is installed) replace most of the puffs for big blasts.
+            if (kind != ExplosionKind.Small && kind != ExplosionKind.ShapedCharge && kind != ExplosionKind.Water && tnt >= 5f
+                && VolumetricFX.Explosion(pos, up, R, k, kind, groundDist < R * 0.6f)) q *= 0.4f;
+            if (k > 1.6f || kind == ExplosionKind.Thermobaric || kind == ExplosionKind.Nuke) VolumetricFX.Shock(pos, R * (kind == ExplosionKind.Nuke ? 6f : 2.5f));
             // Marks that stay: scorch / crater where it touched the ground, and fires from big ground hits and fuel kills.
             if (groundDist < R * 0.6f && kind != ExplosionKind.Water && kind != ExplosionKind.Small
                 && Physics.Raycast(pos + up * 1f, -up, out var gh, R + 2f, (int)LayerMasks.Scenery))
