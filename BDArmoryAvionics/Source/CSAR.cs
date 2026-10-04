@@ -182,7 +182,9 @@ namespace BDArmory.Avionics
                 pickups.Remove(kv.Key);
                 if (vtol == null) continue;
                 C2Tasking.Release(v);
-                vtol.GoTo(s.lat, s.lon, 30, land: true);
+                var evaV = FindVessel(s.evaId);
+                if (!(KASOps.CanHoist(v) && evaV != null && evaV.loaded && KASOps.Rescue(v, evaV, s.kerbal)))
+                    vtol.GoTo(s.lat, s.lon, 30, land: true);
                 try { Ocisly.OpenFirst(v, "CSAR pickup"); } catch { }
                 AICommander.Log($"{v.GetName()} on scene: VTOL pickup of {s.kerbal}");
             }
@@ -263,7 +265,7 @@ namespace BDArmory.Avionics
             if (!eva.LandedOrSplashed) return;
             foreach (var v in FlightGlobals.VesselsLoaded)
             {
-                if (v == null || v.isEVA || v.packed) continue;
+                if (v == null || v.isEVA || v.packed || KASOps.Ops.ContainsKey(v)) continue; // mid-hoist: the winch brings them up
                 var wm = v.ActiveController().WM;
                 if (wm == null || wm.Team == null || wm.Team.Name != s.team) continue;
                 if ((v.CoMD - eva.CoMD).magnitude > 60 || v.srfSpeed > 8 || (!v.LandedOrSplashed && v.radarAltitude > 20)) continue;
@@ -420,8 +422,13 @@ namespace BDArmory.Avionics
             var vtol = ModuleVTOLAssist.For(unit);
             if (vtol != null && (unit.srfSpeed < 40 || vtol.hoverAG != "None") && (unit.CoMD - body.GetWorldSurfacePosition(s.lat, s.lon, ground)).magnitude < 3000)
             {
-                vtol.GoTo(s.lat, s.lon, 30, land: true);
-                ScreenMessages.PostScreenMessage($"{unit.GetName()}: VTOL pickup of {s.kerbal} - hovering in to land beside them", 5f, ScreenMessageStyle.UPPER_CENTER);
+                var evaV = FindVessel(s.evaId);
+                if (KASOps.CanHoist(unit) && evaV != null && evaV.loaded && KASOps.Rescue(unit, evaV, s.kerbal)) { }
+                else
+                {
+                    vtol.GoTo(s.lat, s.lon, 30, land: true);
+                    ScreenMessages.PostScreenMessage($"{unit.GetName()}: VTOL pickup of {s.kerbal} - hovering in to land beside them", 5f, ScreenMessageStyle.UPPER_CENTER);
+                }
             }
             else
             {
