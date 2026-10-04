@@ -210,6 +210,15 @@ namespace BDArmory.Avionics
                 // so keep asking until the kerbal is actually free, and only then fire the seat.
                 var wait = new WaitForFixedUpdate();
                 yield return wait;
+                // A fresh EVA kerbal has no state machine for a few frames; it grabs the ladder once it starts.
+                // Wait for it (up to 2 s), otherwise the release below sees "nothing held" and the grab happens afterwards.
+                for (float w0 = Time.time; eva != null && eva.vessel != null && (eva.fsm == null || eva.fsm.CurrentState == null || eva.part == null || eva.part.Rigidbody == null) && Time.time - w0 < 2f;)
+                {
+                    eva.vessel.SetPosition(fromPart != null ? fromPart.transform.position + dir * EjectClearance(fromPart) : (Vector3)eva.vessel.CoM);
+                    if (fromPart != null && fromPart.vessel != null) eva.vessel.SetVelocity(fromPart.vessel.Velocity());
+                    yield return wait;
+                }
+                for (int f = 0; f < 3 && eva != null && eva.vessel != null; f++) { LetGo(eva); yield return wait; } // the grab starts on the first state frames
                 if (eva == null || eva.vessel == null) yield break;
                 string grabbed = StateName(eva);
                 bool wasJointed = AnchorJoint(eva) != null || eva.IsLadderJointed;

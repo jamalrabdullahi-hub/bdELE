@@ -26,6 +26,15 @@ namespace BDArmory.Avionics
         static float pxPerMeter, sinE, cosE, sinY, cosY, altScale;
         static Vector3 fwd, up, right;
 
+        // Centre: null = own ship, else a contact key (right-click a contact to centre on it).
+        static string centerKey;
+        // Track history: contact key -> recent positions relative to the planet (one per second, 30 s).
+        static readonly Dictionary<string, List<Vector3>> trails = new();
+        static float nextTrail;
+        const int TrailPoints = 30;
+        public static bool ShowTrails = true, ShowPredict = true;
+        static readonly Vector2[] trailPts = new Vector2[TrailPoints + 1];
+
         public static void Draw(int id)
         {
             var rect = AvionicsSettings.Radar3DRect;
@@ -59,8 +68,31 @@ namespace BDArmory.Avionics
             x += 54;
             if (x + 44 < rect.width && GUI.Button(new Rect(x, y, 44, h), "View", btn)) { AvionicsSettings.Radar3DYaw = 0; AvionicsSettings.Radar3DElevation = 30; }
 
+            // Second row: centre and overlays
+            x = 6; y += 22;
+            var sel = BDArmorySetup.SelectedButtonStyle;
+            var cc = CenterContact();
+            if (centerKey != null && cc == null) centerKey = null; // lost track: back to own ship
+            if (GUI.Button(new Rect(x, y, 46, h), "OWN", centerKey == null ? sel : btn)) centerKey = null;
+            x += 48;
+            if (GUI.Button(new Rect(x, y, 40, h), "SEL", centerKey != null && centerKey == AvionicsContacts.SelectedKey ? sel : btn) && AvionicsContacts.Selected != null) centerKey = AvionicsContacts.SelectedKey;
+            x += 42;
+            if (GUI.Button(new Rect(x, y, 22, h), "<", btn)) CycleCenter(-1);
+            x += 24;
+            if (GUI.Button(new Rect(x, y, 22, h), ">", btn)) CycleCenter(1);
+            x += 26;
+            ShowTrails = GUI.Toggle(new Rect(x, y, 50, h), ShowTrails, "TRAIL", ShowTrails ? sel : btn);
+            x += 52;
+            ShowPredict = GUI.Toggle(new Rect(x, y, 46, h), ShowPredict, "PRED", ShowPredict ? sel : btn);
+            x += 48;
+            AvionicsSettings.Radar3DShowThreats = GUI.Toggle(new Rect(x, y, 46, h), AvionicsSettings.Radar3DShowThreats, "THRT", AvionicsSettings.Radar3DShowThreats ? sel : btn);
+            x += 50;
+            string cname = cc != null ? cc.name : "own ship";
+            if (cname.Length > 16) cname = cname.Substring(0, 16);
+            AvionicsDraw.ColorLabel(new Rect(x, y + 3, Mathf.Max(10, rect.width - x - 6), h), "CTR " + cname, AvionicsDraw.LabelSmall, cc != null ? cc.IFFColor : AvionicsDraw.HudText);
+
             TargetListWindow.DrawResizeHandle(ref AvionicsSettings.Radar3DRect, 380, 360);
-            Rect scope = new(6, 46, rect.width - 12, rect.height - 66);
+            Rect scope = new(6, 68, rect.width - 12, rect.height - 88);
             HandleInput(scope);
             DrawScope(scope);
 
@@ -91,7 +123,13 @@ namespace BDArmory.Avionics
         static void HandleInput(Rect scope)
         {
             var e = Event.current;
-            if (e.type == EventType.MouseDown && e.button == 0 && scope.Contains(e.mousePosition))
+            if (e.type == EventType.MouseDown && e.button == 1 && scope.Contains(e.mousePosition))
+            {
+                string k = PickKey(e.mousePosition);
+                centerKey = k != null && k != "own" && k != centerKey ? k : null; // right-click a contact: centre on it; again, or empty space: own ship
+                e.Use();
+            }
+            else if (e.type == EventType.MouseDown && e.button == 0 && scope.Contains(e.mousePosition))
             {
                 mouseDownInScope = true;
                 dragging = false;
@@ -128,7 +166,7 @@ namespace BDArmory.Avionics
         /// <summary>Called by the core addon when the mouse button is released outside the window.</summary>
         public static void CancelDrag() { mouseDownInScope = false; dragging = false; }
 
-        static void Pick(Vector2 mouse)
+        static string PickKey(Vector2 mouse)
         {
             float best = 14 * 14;
             string bestKey = null;
@@ -137,7 +175,99 @@ namespace BDArmory.Avionics
                 float d = (picks[i].pos - mouse).sqrMagnitude;
                 if (d < best) { best = d; bestKey = picks[i].key; }
             }
-            if (bestKey == null) return;
+            return bestKey;
+        }
+
+        static Contact CenterContact()
+        {
+            if (centerKey == null) return null;
+            foreach (var c in AvionicsContacts.Contacts) if (c.Key == centerKey) return c;
+            return null;
+        }
+
+        static void CycleCenter(int step)
+        {
+            var list = new List<Contact>();
+            foreach (var c in AvionicsContacts.Contacts) if (!c.IsGPS && ShowOnScope(c)) list.Add(c);
+            if (list.Count == 0) { centerKey = null; return; }
+            int i = list.FindIndex(c => c.Key == centerKey);
+            i = i < 0 ? (step > 0 ? 0 : list.Count - 1) : i + step;
+            centerKey = i < 0 || i >= list.Count ? null : list[i].Key; // stepping past either end returns to own ship
+        }
+
+        static void UpdateTrails(Vessel own)
+        {
+            if (Time.time < nextTrail) return;
+            nextTrail = Time.time + 1f;
+            Vector3 body = own.mainBody.position;
+            var live = new HashSet<string>();
+            void Add(string k, Vector3 pos)
+            {
+                live.Add(k);
+                if (!trails.TryGetValue(k, out var l)) trails[k] = l = new List<Vector3>();
+                l.Add(pos - body);
+                if (l.Count > TrailPoints) l.RemoveAt(0);
+            }
+            foreach (var c in AvionicsContacts.Contacts) if (!c.IsGPS) Add(c.Key, c.position);
+            Add("own", own.CoM);
+            var dead = new List<string>();
+            foreach (var k in trails.Keys) if (!live.Contains(k)) dead.Add(k);
+            foreach (var k in dead) trails.Remove(k);
+        }
+
+        static void DrawTrail(string key, Vector3 centre, Vector3 body, Color col)
+        {
+            if (!trails.TryGetValue(key, out var l) || l.Count < 2) return;
+            int n = 0;
+            for (int i = 0; i < l.Count; i++) trailPts[n++] = Project(ToLocal(l[i] + body - centre));
+            for (int i = 1; i < n; i++) AvionicsDraw.Line(trailPts[i - 1], trailPts[i], 1, new Color(col.r, col.g, col.b, col.a * i / n));
+        }
+
+        /// <summary>Selected missile's max range against the selected contact, as a dashed ring around own ship.</summary>
+        static void DrawRmaxRing(Vessel own, Vector3 ownLocal)
+        {
+            var wm = AvionicsContacts.WM;
+            var m = wm != null ? wm.CurrentMissile : null;
+            var c = AvionicsContacts.Selected;
+            if (m == null || c == null || c.IsGPS) return;
+            var est = MissileEstimator.Estimate(m, own.CoM, own.Velocity(), c.position, c.velocity, withMaxRange: true, targetId: c.vessel != null ? c.vessel.persistentId : 0);
+            if (!est.valid || est.maxRange <= 0) return;
+            Color col = est.canReach ? AvionicsDraw.Friendly : AvionicsDraw.Unknown;
+            col.a = 0.6f;
+            for (int i = 0; i <= 64; i++)
+            {
+                float t = i * Mathf.PI * 2 / 64;
+                ring[i] = Project(new Vector3(ownLocal.x + Mathf.Cos(t) * est.maxRange, 0, ownLocal.z + Mathf.Sin(t) * est.maxRange));
+            }
+            for (int i = 0; i < 64; i += 2) AvionicsDraw.Line(ring[i], ring[i + 1], 1.5f, col);
+        }
+
+        /// <summary>BRAA of the selected contact from own ship: bearing, range, altitude, aspect.</summary>
+        static void DrawBRAA(Rect scope, Vessel own)
+        {
+            var c = AvionicsContacts.Selected;
+            if (c == null) return;
+            Vector3 upO = (Vector3)own.upAxis;
+            Vector3 to = c.position - (Vector3)own.CoM;
+            Vector3 north = VectorUtils.GetNorthVector(own.CoM, own.mainBody);
+            Vector3 flat = Vector3.ProjectOnPlane(to, upO);
+            float brg = Mathf.Repeat(Vector3.SignedAngle(north, flat, upO), 360);
+            string aspect = "";
+            if (!c.IsGPS && c.velocity.sqrMagnitude > 25)
+            {
+                float a = Vector3.Angle(Vector3.ProjectOnPlane(c.velocity, upO), -flat); // 0 = flying straight at us
+                aspect = a < 30 ? "HOT" : a > 150 ? "COLD" : a < 70 ? "FLANK" : a > 110 ? "DRAG" : "BEAM";
+                aspect += $"  Vc {c.closure:0} m/s";
+            }
+            string n = c.name.Length > 14 ? c.name.Substring(0, 14) : c.name;
+            AvionicsDraw.ShadowLabel(new Rect(scope.x + 6, scope.yMax - 32, scope.width - 12, 14),
+                $"BRAA {n}: {brg:000}°  {AvionicsDraw.FormatRange(to.magnitude)}  {AvionicsDraw.FormatAlt(c.altitude)}  {aspect}", AvionicsDraw.LabelSmall, c.IFFColor);
+        }
+
+        static void Pick(Vector2 mouse)
+        {
+            string bestKey = PickKey(mouse);
+            if (bestKey == null || bestKey == "own") return;
             foreach (var c in AvionicsContacts.Contacts)
                 if (c.Key == bestKey)
                 {
@@ -172,11 +302,16 @@ namespace BDArmory.Avionics
                 return;
             }
 
-            // Reference frame: heading-stabilised (or north-up), level with the horizon
-            up = (Vector3)own.upAxis;
-            Vector3 north = VectorUtils.GetNorthVector(own.CoM, own.mainBody);
-            Vector3 heading = Vector3.ProjectOnPlane(own.ReferenceTransform.up, up);
-            if (heading.sqrMagnitude < 1e-4f) heading = Vector3.ProjectOnPlane(-own.ReferenceTransform.forward, up);
+            UpdateTrails(own);
+            var cc = CenterContact();
+            Vector3 body = own.mainBody.position;
+            Vector3 ownPos = cc != null ? cc.position : (Vector3)own.CoM;
+
+            // Reference frame: heading-stabilised (or north-up), level with the horizon, at the centre
+            up = (ownPos - body).normalized;
+            Vector3 north = VectorUtils.GetNorthVector(ownPos, own.mainBody);
+            Vector3 heading = cc != null ? Vector3.ProjectOnPlane(cc.velocity, up) : Vector3.ProjectOnPlane(own.ReferenceTransform.up, up);
+            if (heading.sqrMagnitude < 1e-4f && cc == null) heading = Vector3.ProjectOnPlane(-own.ReferenceTransform.forward, up);
             if (heading.sqrMagnitude < 1e-4f) heading = north;
             heading.Normalize();
             fwd = AvionicsSettings.Radar3DNorthUp ? north : heading;
@@ -206,18 +341,26 @@ namespace BDArmory.Avionics
             AvionicsDraw.Line(Project(new Vector3(-range, 0, 0)), Project(new Vector3(range, 0, 0)), 1, AvionicsDraw.GridFaint);
             AvionicsDraw.Line(Project(new Vector3(0, 0, -range)), Project(new Vector3(0, 0, range)), 1, AvionicsDraw.GridFaint);
 
-            // Own ship, pointing along the vessel heading
-            Vector3 headingLocal = ToLocal(heading);
-            Vector2 c0 = Project(Vector3.zero), c1 = Project(headingLocal * range * 0.05f);
-            float angle = Vector2.SignedAngle(Vector2.down, c1 - c0);
-            if ((c1 - c0).sqrMagnitude < 0.5f) angle = 0;
-            AvionicsDraw.Triangle(c0, 7, angle, 2, AvionicsDraw.HudText);
+            // Own ship, pointing along its heading (at the centre, or where it is when centred on a contact)
+            Vector3 ownLocal = ToLocal((Vector3)own.CoM - ownPos);
+            Vector3 ownHeading = Vector3.ProjectOnPlane(own.ReferenceTransform.up, up);
+            if (ownHeading.sqrMagnitude < 1e-4f) ownHeading = heading;
+            Vector3 headingLocal = ToLocal(ownHeading.normalized);
+            if (ShowTrails) DrawTrail("own", ownPos, body, new Color(1, 1, 1, 0.45f));
+            if (new Vector2(ownLocal.x, ownLocal.z).magnitude <= range)
+            {
+                Vector2 c0 = Project(ownLocal), c1 = Project(ownLocal + headingLocal * range * 0.05f);
+                float angle = Vector2.SignedAngle(Vector2.down, c1 - c0);
+                if ((c1 - c0).sqrMagnitude < 0.5f) angle = 0;
+                if (cc != null) { AvionicsDraw.DashedLine(Project(new Vector3(ownLocal.x, 0, ownLocal.z)), c0, 1.5f, AvionicsDraw.HudText, 3, 3); picks.Add((c0, "own")); }
+                AvionicsDraw.Triangle(c0, 7, angle, 2, AvionicsDraw.HudText);
+            }
+            DrawRmaxRing(own, ownLocal);
 
             // Contacts
             int beyond = 0;
             var labels = new List<(Vector2 pos, Contact c)>();
             var selectedKey = AvionicsContacts.SelectedKey;
-            Vector3 ownPos = own.CoM;
             foreach (var c in AvionicsContacts.Contacts)
             {
                 if (!ShowOnScope(c)) continue;
@@ -231,6 +374,15 @@ namespace BDArmory.Avionics
                 head.y = Mathf.Clamp(head.y, scope.yMin + 4, scope.yMax - 4);
                 Color col = c.IFFColor;
                 if (c.IsGPS) col = new Color(col.r, col.g, col.b, 0.6f);
+                if (ShowTrails && !c.IsGPS) DrawTrail(c.Key, ownPos, body, new Color(col.r, col.g, col.b, 0.45f));
+                // Predicted path: where it will be in 30 s at its current velocity (selected, locked, hostile, missiles).
+                if (ShowPredict && !c.IsGPS && c.velocity.sqrMagnitude > 25 && (c.Key == selectedKey || c.radarLocked || c.isMissile || c.iff == IFF.Hostile))
+                {
+                    Vector2 p30 = Project(local + ToLocal(c.velocity * 30f));
+                    AvionicsDraw.DashedLine(head, p30, 1, new Color(col.r, col.g, col.b, 0.7f), 2, 4);
+                    AvionicsDraw.Circle(p30, 2.5f, 1, col, 8);
+                }
+                if (c.Key == centerKey) AvionicsDraw.Circle(head, 20, 1, AvionicsDraw.HudText, 4);
 
                 // Stalk: solid above, dashed below
                 if (local.y >= 0) AvionicsDraw.Line(basePt, head, 1.5f, col);
@@ -323,6 +475,7 @@ namespace BDArmory.Avionics
                     threatLabels.Add((outer, t));
                 }
             AvionicsDraw.End();
+            DrawBRAA(scope, own);
             foreach (var (pos, t) in threatLabels)
             {
                 string tti = t.timeToImpact > 0 && t.timeToImpact < 999 ? $" {t.timeToImpact:F0}s" : "";
@@ -366,7 +519,7 @@ namespace BDArmory.Avionics
                 AvionicsDraw.ShadowLabel(new Rect(lx, pos.y, 110, 13), info, small, c.IFFColor);
             }
 
-            AvionicsDraw.ColorLabel(new Rect(scope.x + 6, scope.yMax - 16, 260, 14), "drag to orbit · scroll to zoom · click to lock", small, AvionicsDraw.ScopeText);
+            AvionicsDraw.ColorLabel(new Rect(scope.x + 6, scope.yMax - 16, 320, 14), "drag orbit · scroll zoom · click lock · right-click centre", small, AvionicsDraw.ScopeText);
             string beyondText = beyond > 0 ? $"+{beyond} beyond range" : "";
             AvionicsDraw.ColorLabel(new Rect(scope.xMax - 146, scope.yMax - 16, 140, 14), beyondText, AvionicsDraw.LabelRight, AvionicsDraw.ScopeText);
             if (AvionicsContacts.WM.vesselRadarData == null)
