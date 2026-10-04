@@ -327,8 +327,18 @@ namespace BDArmory.Avionics
         public static void AimRay(Part p, out Vector3 origin, out Vector3 fwd)
         {
             if (p.FindModuleImplementing<ModuleWeapon>() is ModuleWeapon w && w.fireTransforms != null && w.fireTransforms.Length > 0) { origin = w.fireTransforms[0].position; fwd = w.fireTransforms[0].forward; return; }
-            if (p.FindModuleImplementing<MissileLauncher>() is MissileLauncher ml && ml.MissileReferenceTransform != null) { origin = ml.MissileReferenceTransform.position; fwd = ml.MissileReferenceTransform.forward; return; }
-            if (p.FindModuleImplementing<MissileBase>() is MissileBase mb) { origin = mb.transform.position; fwd = HighLogic.LoadedSceneIsFlight ? mb.GetForwardTransform() : mb.transform.forward; return; }
+            if (p.FindModuleImplementing<MissileBase>() is MissileBase mb)
+            {
+                // BDArmory's launcher transforms aren't set up in the editor (GetForwardTransform throws there): fall back to the part.
+                origin = mb.transform.position; fwd = mb.transform.forward;
+                try
+                {
+                    if (mb is MissileLauncher ml && ml.MissileReferenceTransform != null) { origin = ml.MissileReferenceTransform.position; fwd = ml.MissileReferenceTransform.forward; }
+                    else if (HighLogic.LoadedSceneIsFlight) fwd = mb.GetForwardTransform();
+                }
+                catch { }
+                return;
+            }
             var hc = HullCam.Find(p);
             if (hc != null) { HullCam.Ray(hc, out origin, out fwd); return; }
             var tgp = p.FindModuleImplementing<ModuleTargetingCamera>();
@@ -504,7 +514,7 @@ namespace BDArmory.Avionics
         {
             var s = t.settings; float now = Time.time;
             if (haveTarget) s.gLastTarget = now;
-            void Set(int st) { if (s.gState != st) { s.gState = st; s.gT0 = now; } }
+            void Set(int st) { if (s.gState != st) { Debug.Log($"[BDArmoryAvionics]: turret on {t.vessel.GetName()}: gantry {ModuleIRTurret.GStateNames[s.gState]} -> {ModuleIRTurret.GStateNames[st]} ({t.gantry.Count} servos)"); s.gState = st; s.gT0 = now; } }
             bool AllAt(bool deployed) { foreach (var g in t.gantry) if (Mathf.Abs(IRServo.Position(g.servo) - (deployed ? g.module.gDeployed : g.module.gStowed)) > 0.6f) return false; return true; }
             float maxDelay = 0; foreach (var g in t.gantry) maxDelay = Mathf.Max(maxDelay, g.module.gDelay);
             switch (s.gState)
