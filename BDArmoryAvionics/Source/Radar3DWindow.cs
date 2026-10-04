@@ -32,7 +32,52 @@ namespace BDArmory.Avionics
         static readonly Dictionary<string, List<Vector3>> trails = new();
         static float nextTrail;
         const int TrailPoints = 30;
-        public static bool ShowTrails = true, ShowPredict = true;
+        public static bool ShowTrails = true, ShowPredict = true, ShowGroups = true, ShowIntercept = true;
+        const float GroupLinkM = 6000f; // contacts closer than this to any member join the group
+
+        /// <summary>A formation: aircraft of one side flying close together.</summary>
+        class Group { public List<Contact> members = new(); public Vector3 centre, velocity; public float spread; public double altMin, altMax; public IFF iff; public string Key => "grp:" + members[0].Key; }
+        static readonly List<Group> groups = new();
+
+        static void BuildGroups()
+        {
+            groups.Clear();
+            var pool = new List<Contact>();
+            foreach (var c in AvionicsContacts.Contacts)
+                if (!c.IsGPS && !c.isMissile && ShowOnScope(c) && (c.iff == IFF.Hostile || c.iff == IFF.Unknown)) pool.Add(c);
+            while (pool.Count > 0)
+            {
+                var g = new Group(); g.members.Add(pool[0]); pool.RemoveAt(0);
+                for (int i = 0; i < g.members.Count; i++)
+                    for (int j = pool.Count - 1; j >= 0; j--)
+                        if (pool[j].iff == g.members[0].iff && (pool[j].position - g.members[i].position).sqrMagnitude < GroupLinkM * GroupLinkM) { g.members.Add(pool[j]); pool.RemoveAt(j); }
+                if (g.members.Count < 2) continue;
+                g.members.Sort((a, b) => string.CompareOrdinal(a.Key, b.Key)); // stable key while the group holds together
+                g.iff = g.members[0].iff; g.altMin = double.MaxValue; g.altMax = double.MinValue;
+                foreach (var m in g.members) { g.centre += m.position; g.velocity += m.velocity; g.altMin = System.Math.Min(g.altMin, m.altitude); g.altMax = System.Math.Max(g.altMax, m.altitude); }
+                g.centre /= g.members.Count; g.velocity /= g.members.Count;
+                foreach (var m in g.members) g.spread = Mathf.Max(g.spread, (m.position - g.centre).magnitude);
+                groups.Add(g);
+            }
+        }
+
+        static Group GroupOf(string key)
+        {
+            foreach (var g in groups) { if (g.Key == key) return g; foreach (var m in g.members) if (m.Key == key) return g; }
+            return null;
+        }
+
+        /// <summary>Time for own ship at its current speed to meet a target flying straight (|P + V t| = s t); -1 if it can't.</summary>
+        static float InterceptTime(Vector3 rel, Vector3 vel, float speed)
+        {
+            float a = vel.sqrMagnitude - speed * speed, b = 2 * Vector3.Dot(rel, vel), c = rel.sqrMagnitude;
+            if (Mathf.Abs(a) < 1e-3f) return b < 0 ? -c / b : -1;
+            float d = b * b - 4 * a * c;
+            if (d < 0) return -1;
+            float sq = Mathf.Sqrt(d), t1 = (-b - sq) / (2 * a), t2 = (-b + sq) / (2 * a);
+            float t = Mathf.Min(t1, t2) > 0 ? Mathf.Min(t1, t2) : Mathf.Max(t1, t2);
+            return t > 0 ? t : -1;
+        }
         static readonly Vector2[] trailPts = new Vector2[TrailPoints + 1];
 
         public static void Draw(int id)
@@ -72,7 +117,7 @@ namespace BDArmory.Avionics
             x = 6; y += 22;
             var sel = BDArmorySetup.SelectedButtonStyle;
             var cc = CenterContact();
-            if (centerKey != null && cc == null) centerKey = null; // lost track: back to own ship
+            if (centerKey != null && cc == null && (!centerKey.StartsWith("grp:") || GroupOf(centerKey) == null)) centerKey = null; // lost track: back to own ship
             if (GUI.Button(new Rect(x, y, 46, h), "OWN", centerKey == null ? sel : btn)) centerKey = null;
             x += 48;
             if (GUI.Button(new Rect(x, y, 40, h), "SEL", centerKey != null && centerKey == AvionicsContacts.SelectedKey ? sel : btn) && AvionicsContacts.Selected != null) centerKey = AvionicsContacts.SelectedKey;
@@ -87,7 +132,12 @@ namespace BDArmory.Avionics
             x += 48;
             AvionicsSettings.Radar3DShowThreats = GUI.Toggle(new Rect(x, y, 46, h), AvionicsSettings.Radar3DShowThreats, "THRT", AvionicsSettings.Radar3DShowThreats ? sel : btn);
             x += 50;
-            string cname = cc != null ? cc.name : "own ship";
+            ShowGroups = GUI.Toggle(new Rect(x, y, 40, h), ShowGroups, "GRP", ShowGroups ? sel : btn);
+            x += 42;
+            ShowIntercept = GUI.Toggle(new Rect(x, y, 34, h), ShowIntercept, "INT", ShowIntercept ? sel : btn);
+            x += 38;
+            var cg = centerKey != null && centerKey.StartsWith("grp:") ? GroupOf(centerKey) : null;
+            string cname = cg != null ? $"group of {cg.members.Count}" : cc != null ? cc.name : "own ship";
             if (cname.Length > 16) cname = cname.Substring(0, 16);
             AvionicsDraw.ColorLabel(new Rect(x, y + 3, Mathf.Max(10, rect.width - x - 6), h), "CTR " + cname, AvionicsDraw.LabelSmall, cc != null ? cc.IFFColor : AvionicsDraw.HudText);
 
@@ -182,7 +232,7 @@ namespace BDArmory.Avionics
         {
             if (centerKey == null) return null;
             foreach (var c in AvionicsContacts.Contacts) if (c.Key == centerKey) return c;
-            return null;
+            return null; // group centres are handled by GroupOf
         }
 
         static void CycleCenter(int step)
@@ -190,9 +240,12 @@ namespace BDArmory.Avionics
             var list = new List<Contact>();
             foreach (var c in AvionicsContacts.Contacts) if (!c.IsGPS && ShowOnScope(c)) list.Add(c);
             if (list.Count == 0) { centerKey = null; return; }
-            int i = list.FindIndex(c => c.Key == centerKey);
-            i = i < 0 ? (step > 0 ? 0 : list.Count - 1) : i + step;
-            centerKey = i < 0 || i >= list.Count ? null : list[i].Key; // stepping past either end returns to own ship
+            var keys = new List<string>();
+            foreach (var g in groups) keys.Add(g.Key);
+            foreach (var c in list) keys.Add(c.Key);
+            int i = keys.IndexOf(centerKey);
+            i = i < 0 ? (step > 0 ? 0 : keys.Count - 1) : i + step;
+            centerKey = i < 0 || i >= keys.Count ? null : keys[i]; // stepping past either end returns to own ship
         }
 
         static void UpdateTrails(Vessel own)
@@ -267,7 +320,7 @@ namespace BDArmory.Avionics
         static void Pick(Vector2 mouse)
         {
             string bestKey = PickKey(mouse);
-            if (bestKey == null || bestKey == "own") return;
+            if (bestKey == null || bestKey == "own" || bestKey.StartsWith("grp:")) return;
             foreach (var c in AvionicsContacts.Contacts)
                 if (c.Key == bestKey)
                 {
@@ -303,15 +356,18 @@ namespace BDArmory.Avionics
             }
 
             UpdateTrails(own);
+            BuildGroups();
             var cc = CenterContact();
+            var cgrp = centerKey != null && centerKey.StartsWith("grp:") ? GroupOf(centerKey) : null;
+            if (cgrp != null) centerKey = cgrp.Key; // the lead can change as members come and go
             Vector3 body = own.mainBody.position;
-            Vector3 ownPos = cc != null ? cc.position : (Vector3)own.CoM;
+            Vector3 ownPos = cgrp != null ? cgrp.centre : cc != null ? cc.position : (Vector3)own.CoM;
 
             // Reference frame: heading-stabilised (or north-up), level with the horizon, at the centre
             up = (ownPos - body).normalized;
             Vector3 north = VectorUtils.GetNorthVector(ownPos, own.mainBody);
-            Vector3 heading = cc != null ? Vector3.ProjectOnPlane(cc.velocity, up) : Vector3.ProjectOnPlane(own.ReferenceTransform.up, up);
-            if (heading.sqrMagnitude < 1e-4f && cc == null) heading = Vector3.ProjectOnPlane(-own.ReferenceTransform.forward, up);
+            Vector3 heading = cgrp != null ? Vector3.ProjectOnPlane(cgrp.velocity, up) : cc != null ? Vector3.ProjectOnPlane(cc.velocity, up) : Vector3.ProjectOnPlane(own.ReferenceTransform.up, up);
+            if (heading.sqrMagnitude < 1e-4f && cc == null && cgrp == null) heading = Vector3.ProjectOnPlane(-own.ReferenceTransform.forward, up);
             if (heading.sqrMagnitude < 1e-4f) heading = north;
             heading.Normalize();
             fwd = AvionicsSettings.Radar3DNorthUp ? north : heading;
@@ -457,6 +513,46 @@ namespace BDArmory.Avionics
                 }
             }
 
+            // Groups: a ring round each formation on the ground plane, sized to its spread.
+            var groupLabels = new List<(Vector2 pos, Group g)>();
+            if (ShowGroups)
+                foreach (var g in groups)
+                {
+                    Vector3 gl = ToLocal(g.centre - ownPos);
+                    if (new Vector2(gl.x, gl.z).magnitude > range * 1.1f) continue;
+                    float r = Mathf.Max(g.spread * 1.15f, range * 0.025f);
+                    Color gc = g.iff == IFF.Hostile ? AvionicsDraw.Hostile : AvionicsDraw.Unknown; gc.a = 0.55f;
+                    for (int i = 0; i <= 32; i++) { float t = i * Mathf.PI * 2 / 32; ring[i] = Project(new Vector3(gl.x + Mathf.Cos(t) * r, 0, gl.z + Mathf.Sin(t) * r)); }
+                    AvionicsDraw.Polyline(ring, 33, 1.5f, gc, false);
+                    Vector2 lp = Project(new Vector3(gl.x, 0, gl.z + r));
+                    picks.Add((Project(new Vector3(gl.x, 0, gl.z)), g.Key));
+                    if (g.Key == centerKey) AvionicsDraw.Circle(Project(new Vector3(gl.x, 0, gl.z)), 6, 1, AvionicsDraw.HudText, 4);
+                    groupLabels.Add((lp, g));
+                }
+
+            // Intercept: where own ship meets the selected contact at its current speed, if both hold course.
+            string interceptText = null;
+            var selc = AvionicsContacts.Selected;
+            if (ShowIntercept && selc != null && !selc.IsGPS && own.srfSpeed > 20)
+            {
+                Vector3 rel = selc.position - (Vector3)own.CoM;
+                float ti = InterceptTime(rel, selc.velocity, (float)own.srfSpeed);
+                if (ti > 0 && ti < 900)
+                {
+                    Vector3 meet = selc.position + selc.velocity * ti;
+                    Vector3 ml = ToLocal(meet - ownPos);
+                    Vector2 mp = Project(ml);
+                    Color ic = new(0.4f, 0.9f, 1f, 0.9f);
+                    AvionicsDraw.DashedLine(Project(ToLocal((Vector3)own.CoM - ownPos)), mp, 1, ic, 5, 4);
+                    AvionicsDraw.Line(mp + new Vector2(-5, -5), mp + new Vector2(5, 5), 2, ic);
+                    AvionicsDraw.Line(mp + new Vector2(-5, 5), mp + new Vector2(5, -5), 2, ic);
+                    Vector3 hdg = Vector3.ProjectOnPlane(meet - (Vector3)own.CoM, (Vector3)own.upAxis);
+                    float brg = Mathf.Repeat(Vector3.SignedAngle(VectorUtils.GetNorthVector(own.CoM, own.mainBody), hdg, (Vector3)own.upAxis), 360);
+                    interceptText = $"INTERCEPT  steer {brg:000}°  merge {ti:0}s  {AvionicsDraw.FormatRange((meet - (Vector3)own.CoM).magnitude)}";
+                }
+                else interceptText = "INTERCEPT  none at current speed";
+            }
+
             // Threats: strobes on the outer ring at the threat's bearing; incoming missiles get a line to own ship.
             var threatLabels = new List<(Vector2 pos, Threat t)>();
             if (AvionicsSettings.Radar3DShowThreats)
@@ -476,6 +572,13 @@ namespace BDArmory.Avionics
                 }
             AvionicsDraw.End();
             DrawBRAA(scope, own);
+            foreach (var (pos, g) in groupLabels)
+            {
+                string alt = $"{AvionicsDraw.FormatAlt(g.altMin)}-{AvionicsDraw.FormatAlt(g.altMax)}";
+                AvionicsDraw.ShadowLabel(new Rect(pos.x - 70, pos.y - 14, 140, 13), $"GRP {g.members.Count}  {AvionicsDraw.FormatRange(g.spread * 2)} wide  {alt}", AvionicsDraw.LabelCenter, g.iff == IFF.Hostile ? AvionicsDraw.Hostile : AvionicsDraw.Unknown);
+            }
+            if (interceptText != null)
+                AvionicsDraw.ShadowLabel(new Rect(scope.x + 6, scope.yMax - 46, scope.width - 12, 14), interceptText, AvionicsDraw.LabelSmall, new Color(0.4f, 0.9f, 1f));
             foreach (var (pos, t) in threatLabels)
             {
                 string tti = t.timeToImpact > 0 && t.timeToImpact < 999 ? $" {t.timeToImpact:F0}s" : "";
