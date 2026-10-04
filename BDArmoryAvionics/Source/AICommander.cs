@@ -338,7 +338,18 @@ namespace BDArmory.Avionics
         static readonly FieldInfo latestName = AccessTools.Field(typeof(VesselSpawnerBase), "latestSpawnedVesselName");
         static readonly FieldInfo spawned = AccessTools.Field(typeof(VesselSpawnerBase), "spawnedVessels");
 
-        void Awake() { instance = this; queue.Clear(); despawning.Clear(); }
+        void Awake() { instance = this; queue.Clear(); despawning.Clear(); GameEvents.onVesselGoOffRails.Add(OnOffRails); }
+
+        // While a craft is being spawned: catch it the frame KSP starts its physics (goes off rails), not seconds later
+        // when BDArmory's spawn routine finishes. Until then it would be falling with nobody at the controls.
+        HashSet<uint> spawnBefore; Vector3 spawnDir; float spawnSpeed, spawnStart; bool spawnCaught;
+        void OnOffRails(Vessel nv)
+        {
+            if (spawnBefore == null || spawnCaught || nv == null || spawnBefore.Contains(nv.persistentId) || nv.vesselType == VesselType.Debris || nv.isEVA) return;
+            spawnCaught = true;
+            Debug.Log($"[BDArmoryAvionics]: {nv.GetName()} off rails {Time.time - spawnStart:F2} s after spawn request - spawn hold attached");
+            SpawnHold.Attach(nv, spawnDir, spawnSpeed);
+        }
         public static bool Busy => instance != null && instance.busy;
 
         /// <summary>The craft BDArmory's single-vessel spawner just made (null if it failed).</summary>
@@ -349,7 +360,7 @@ namespace BDArmory.Avionics
             if (latestName?.GetValue(sp) is string name && spawned?.GetValue(sp) is Dictionary<string, Vessel> dict && dict.TryGetValue(name, out var v)) return v;
             return null;
         }
-        void OnDestroy() { if (instance == this) instance = null; }
+        void OnDestroy() { if (instance == this) instance = null; GameEvents.onVesselGoOffRails.Remove(OnOffRails); }
 
         public static void Request(AirFlight fl)
         {
@@ -386,10 +397,12 @@ namespace BDArmory.Avionics
                 double agl = Math.Max(800, fl.alt - Math.Max(0, body.TerrainAltitude(lat, lon)));
                 // Catch the new craft the moment it appears (BDArmory's spawn sequence takes a few seconds) and hold it level.
                 var before = new HashSet<uint>(); foreach (var ev in FlightGlobals.Vessels) if (ev != null) before.Add(ev.persistentId);
+                spawnBefore = before; spawnDir = dir; spawnSpeed = fl.speed; spawnStart = Time.time; spawnCaught = false;
                 var spawn = StartCoroutine(SingleVesselSpawning.Instance.SpawnVessel(fl.path, lat, lon, agl, heading, 0f));
                 bool held = false; float tSpawn = Time.time;
                 while (SingleVesselSpawning.Instance.vesselsSpawning || Time.time - tSpawn < 0.2f)
                 {
+                    if (spawnCaught) held = true;
                     if (!held)
                         foreach (var nv in FlightGlobals.VesselsLoaded)
                             if (nv != null && !before.Contains(nv.persistentId) && nv.vesselType != VesselType.Debris && nv.parts.Count > 1)
@@ -398,6 +411,7 @@ namespace BDArmory.Avionics
                     yield return null;
                 }
                 yield return spawn;
+                spawnBefore = null;
                 Vessel v = null;
                 if (SingleVesselSpawning.Instance.vesselSpawnSuccess && latestName?.GetValue(SingleVesselSpawning.Instance) is string name && spawned?.GetValue(SingleVesselSpawning.Instance) is Dictionary<string, Vessel> dict) dict.TryGetValue(name, out v);
                 if (v == null) { Debug.LogWarning($"[BDArmoryAvionics]: {fl.Callsign}: spawn failed ({SingleVesselSpawning.Instance.spawnFailureReason})"); continue; }
