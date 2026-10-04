@@ -35,7 +35,7 @@ namespace BDArmory.Avionics
 
         void Start()
         {
-            menuRect = new Rect(Screen.width - 300, 90, 240, 620);
+            menuRect = new Rect(Screen.width - 300, 90, 240, 642);
             radarRectIndex = GUIUtils.RegisterGUIRect(new Rect());
             listRectIndex = GUIUtils.RegisterGUIRect(new Rect());
             gpsRectIndex = GUIUtils.RegisterGUIRect(new Rect());
@@ -205,7 +205,10 @@ namespace BDArmory.Avionics
             TheatreWindow.Show = GUI.Toggle(new Rect(12 + hw, y, hw, 20), TheatreWindow.Show, "Theatre", TheatreWindow.Show ? sel : btn); y += 22;
             AvionicsSettings.ShowFeeds = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.ShowFeeds, Ocisly.Available ? "Camera feeds (OCISLY)" : "Camera feeds (OCISLY not loaded)", AvionicsSettings.ShowFeeds ? sel : btn); y += 22;
             AirfieldsWindow.Show = GUI.Toggle(new Rect(8, y, hw, 20), AirfieldsWindow.Show, "Airfields", AirfieldsWindow.Show ? sel : btn);
-            ATCWindow.Show = GUI.Toggle(new Rect(12 + hw, y, hw, 20), ATCWindow.Show, "ATC", ATCWindow.Show ? sel : btn); y += 24;
+            ATCWindow.Show = GUI.Toggle(new Rect(12 + hw, y, hw, 20), ATCWindow.Show, "ATC", ATCWindow.Show ? sel : btn); y += 22;
+            AvionicsSettings.Shrapnel = GUI.Toggle(new Rect(8, y, hw, 20), AvionicsSettings.Shrapnel, AvionicsSettings.Shrapnel ? $"Shrapnel ×{AvionicsSettings.ShrapnelRangeMult:0.#}" : "Shrapnel off", AvionicsSettings.Shrapnel ? sel : btn);
+            if (GUI.Button(new Rect(12 + hw, y, hw, 20), Shrapnel.Patterns[AvionicsSettings.ShrapnelPattern], btn)) AvionicsSettings.ShrapnelPattern = (AvionicsSettings.ShrapnelPattern + 1) % Shrapnel.Patterns.Length;
+            y += 24;
             var net = DataLinkNetwork.PlayerNetwork;
             var iads = net != null ? IADSController.For(net.team) : null;
             int engaged = 0;

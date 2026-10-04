@@ -101,6 +101,9 @@ namespace BDArmory.Avionics
         public static bool ShowLM = false;
         public static bool MissileDLZ = true;
         public static bool ShowFeeds = false;
+        public static bool Shrapnel = true;             // fragments on every explosion, out to ShrapnelRangeMult x the blast radius
+        public static float ShrapnelRangeMult = 2f;
+        public static int ShrapnelPattern = 0;          // Auto, Sphere, Half sphere, Cone
         public static bool AutoFeeds = true;            // OCISLY: stream munition / CSAR cameras automatically          // modular missiles get their launch range from the flight estimator
         public static KeyCode KeyVTOLHover = KeyCode.Keypad7;   // VTOL assist: hover hold on/off
         public static KeyCode KeyVTOLLand = KeyCode.Keypad9;    // VTOL assist: auto-land
@@ -194,6 +197,9 @@ namespace BDArmory.Avionics
                 MissileDLZ = GetBool(node, "MissileDLZ", MissileDLZ);
                 ShowFeeds = GetBool(node, "ShowFeeds", ShowFeeds);
                 AutoFeeds = GetBool(node, "AutoFeeds", AutoFeeds);
+                Shrapnel = GetBool(node, "Shrapnel", Shrapnel);
+                ShrapnelRangeMult = Mathf.Clamp(GetFloat(node, "ShrapnelRangeMult", ShrapnelRangeMult), 1f, 4f);
+                ShrapnelPattern = Mathf.Clamp(GetInt(node, "ShrapnelPattern", ShrapnelPattern), 0, 3);
                 ThreatBanner = GetBool(node, "ThreatBanner", ThreatBanner);
                 Radar3DShowThreats = GetBool(node, "Radar3DShowThreats", Radar3DShowThreats);
 
@@ -281,6 +287,9 @@ namespace BDArmory.Avionics
                 node.AddValue("MissileDLZ", MissileDLZ);
                 node.AddValue("ShowFeeds", ShowFeeds);
                 node.AddValue("AutoFeeds", AutoFeeds);
+                node.AddValue("Shrapnel", Shrapnel);
+                node.AddValue("ShrapnelRangeMult", ShrapnelRangeMult);
+                node.AddValue("ShrapnelPattern", ShrapnelPattern);
                 node.AddValue("ThreatBanner", ThreatBanner);
                 node.AddValue("Radar3DShowThreats", Radar3DShowThreats);
 
