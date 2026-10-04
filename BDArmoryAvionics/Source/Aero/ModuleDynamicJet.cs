@@ -46,6 +46,27 @@ namespace BDArmory.Avionics
          UI_ChooseOption(scene = UI_Scene.Editor, options = new[] { "Grey", "White", "Dark", "Bare metal" })]
         public string finish = "Grey";
 
+        [KSPField(isPersistant = true, guiActiveEditor = true, guiName = "Style"),
+         UI_ChooseOption(scene = UI_Scene.Editor, options = new[] { "Stock", "Detailed" })]
+        public string style = "Stock";
+
+        [KSPField(isPersistant = true, guiActiveEditor = true, guiName = "Prop diameter", guiUnits = " m"),
+         UI_FloatEdit(scene = UI_Scene.Editor, minValue = 0.6f, maxValue = 6f, incrementLarge = 0.5f, incrementSmall = 0.1f, incrementSlide = 0.01f, sigFigs = 2)]
+        public float propDiameter = 2.5f;
+
+        [KSPField] public string kind = "Jet";            // Jet, Turboprop or Turboshaft (set by the part)
+        [KSPField(isPersistant = true)] public bool reverse;
+
+        [KSPEvent(guiActive = true, guiActiveEditor = true, guiName = "Reverse thrust: off")]
+        public void ToggleReverse() { reverse = !reverse; Apply(false); foreach (var p in part.symmetryCounterparts) if (p.FindModuleImplementing<ModuleDynamicJet>() is ModuleDynamicJet m) { m.reverse = reverse; m.Apply(false); } }
+        [KSPAction("Toggle reverse thrust")] public void ReverseAction(KSPActionParam p) => ToggleReverse();
+        [KSPAction("Reverse thrust on")] public void ReverseOnAction(KSPActionParam p) { if (!reverse) ToggleReverse(); }
+        [KSPAction("Reverse thrust off")] public void ReverseOffAction(KSPActionParam p) { if (reverse) ToggleReverse(); }
+
+        bool Jet => kind == "Jet";
+        bool Prop => kind == "Turboprop";
+        bool Shaft => kind == "Turboshaft";
+
         [KSPField(guiActiveEditor = true, guiActive = true, guiName = "Thrust (dry/wet)")] public string thrustInfo = "";
         [KSPField(guiActiveEditor = true, guiActive = true, guiName = "Isp (dry/wet)")] public string ispInfo = "";
         [KSPField(guiActiveEditor = true, guiName = "Top speed")] public string machInfo = "";
@@ -70,8 +91,22 @@ namespace BDArmory.Avionics
             if (ph != null) { foreach (var c in ph.GetComponents<Collider>()) Destroy(c); ph.gameObject.SetActive(false); }
             foreach (var e in part.FindModulesImplementing<ModuleEnginesFX>()) { if (e.engineID == "Wet") wet = e; else dry = e; }
             mm = part.FindModuleImplementing<MultiModeEngine>();
-            foreach (var f in new[] { nameof(diameter), nameof(bypass), nameof(blades), nameof(stages), nameof(tech), nameof(nozzle), nameof(afterburner), nameof(finish) })
+            foreach (var f in new[] { nameof(diameter), nameof(bypass), nameof(blades), nameof(stages), nameof(tech), nameof(nozzle), nameof(afterburner), nameof(finish), nameof(style), nameof(propDiameter) })
                 if (Fields[f].uiControlEditor is UI_Control c) c.onFieldChanged = OnChanged;
+            Fields[nameof(bypass)].guiActiveEditor = Fields[nameof(nozzle)].guiActiveEditor = Fields[nameof(afterburner)].guiActiveEditor = Jet;
+            Fields[nameof(propDiameter)].guiActiveEditor = Prop;
+            Fields[nameof(blades)].guiActiveEditor = !Shaft;
+            Events[nameof(ToggleReverse)].active = Prop;
+            Actions[nameof(ReverseAction)].active = Actions[nameof(ReverseOnAction)].active = Actions[nameof(ReverseOffAction)].active = Prop;
+            if (Prop)
+            {
+                if (Fields[nameof(blades)].uiControlEditor is UI_FloatRange br) { br.minValue = 2; br.maxValue = 8; }
+                if (blades > 8) blades = 4;
+                Fields[nameof(blades)].guiName = "Prop blades";
+                Fields[nameof(diameter)].guiName = "Core diameter";
+            }
+            if (Shaft) { Fields[nameof(thrustInfo)].guiName = "Shaft power"; Fields[nameof(ispInfo)].guiName = "Drives"; }
+            if (!Jet) { Fields[nameof(thrustInfo)].guiName = Shaft ? "Shaft power" : "Power / static thrust"; Fields[nameof(ispInfo)].guiName = Shaft ? "Drives" : "Isp"; }
             Apply(false);
         }
 
@@ -81,7 +116,7 @@ namespace BDArmory.Avionics
             foreach (var p in part.symmetryCounterparts)
                 if (p.FindModuleImplementing<ModuleDynamicJet>() is ModuleDynamicJet m)
                 {
-                    m.diameter = diameter; m.bypass = bypass; m.blades = blades; m.stages = stages; m.tech = tech; m.nozzle = nozzle; m.afterburner = afterburner; m.finish = finish;
+                    m.diameter = diameter; m.bypass = bypass; m.blades = blades; m.stages = stages; m.tech = tech; m.nozzle = nozzle; m.afterburner = afterburner; m.finish = finish; m.style = style; m.propDiameter = propDiameter;
                     m.Apply(true);
                 }
             if (HighLogic.LoadedSceneIsEditor && EditorLogic.fetch?.ship != null) GameEvents.onEditorShipModified.Fire(EditorLogic.fetch.ship);
@@ -90,6 +125,7 @@ namespace BDArmory.Avionics
         // ---------------- engine numbers ----------------
         void Apply(bool moveChildren)
         {
+            if (!Jet) { ApplyShaftEngine(moveChildren); return; }
             float b = Mathf.Min(bypass, 8f) / 8f;              // 0 turbojet .. 1 big fan
             float stageF = stages / 12f;
             float bladeF = Mathf.Clamp((blades - 20f) * 0.002f, -0.04f, 0.05f);
@@ -125,6 +161,34 @@ namespace BDArmory.Avionics
             Build(moveChildren);
         }
 
+        /// <summary>Turboprop and turboshaft: shaft power from core size, stages and tech.</summary>
+        void ApplyShaftEngine(bool moveChildren)
+        {
+            float k = Tech, stageF = stages / 12f;
+            float power = 3200f * diameter * diameter * k * Mathf.Pow(stageF, 0.3f); // kW
+            if (Shaft)
+            {
+                if (part.FindModuleImplementing<ModuleTurboshaft>() is ModuleTurboshaft ts) { ts.powerKW = power; ts.heatKW = power * 0.023f; }
+                mass = Mathf.Max(0.04f, power / 2900f); cost = power * 2.2f * k;
+                thrustInfo = $"{power:F0} kW"; ispInfo = "ELE main rotor"; machInfo = "-"; massInfo = $"{mass:F2} t";
+            }
+            else
+            {
+                // Momentum theory: T = eta * (2 rho A P^2)^(1/3)
+                float A = Mathf.PI * propDiameter * propDiameter / 4f;
+                float t0 = 0.8f * Mathf.Pow(2f * 1.225f * A * (power * 1000f) * (power * 1000f), 1f / 3f) / 1000f;
+                float isp = 25000f * Mathf.Sqrt(k) * (0.85f + 0.15f * Mathf.Min(stageF, 1.5f)) * (1 + (blades - 4) * 0.01f);
+                var vel = new FloatCurve(); vel.Add(0, 1); vel.Add(0.25f, 0.8f); vel.Add(0.45f, 0.55f); vel.Add(0.6f, 0.25f); vel.Add(0.72f, 0);
+                float accel = Mathf.Clamp(0.5f / (1 + propDiameter * 0.1f), 0.1f, 0.6f);
+                float thrust = t0 * (reverse ? 0.6f : 1f);
+                Configure(dry, thrust, isp, vel, 0.5f, accel, 15f);
+                mass = Mathf.Max(0.05f, power / 3000f + 0.012f * propDiameter * blades); cost = power * 2.5f * k + propDiameter * 120f;
+                thrustInfo = $"{power:F0} kW, {t0:F1} kN"; ispInfo = $"{isp:F0} s"; machInfo = "Mach ~0.6"; massInfo = $"{mass:F2} t, spool ~{1f / accel:F1} s";
+                Events[nameof(ToggleReverse)].guiName = reverse ? "Reverse thrust: ON" : "Reverse thrust: off";
+            }
+            Build(moveChildren);
+        }
+
         static FloatCurve VelCurve(float machMax, float peak, float b)
         {
             var c = new FloatCurve();
@@ -155,7 +219,7 @@ namespace BDArmory.Avionics
 
         // ---------------- shape ----------------
         static Material darkMat, bladeMat, spinnerMat, blurMat, innerMat;
-        static Texture2D panelTex, nozzleTex, spiralTex, blurTex;
+        static Texture2D panelTex, nozzleTex, spiralTex, blurTex, stockTex, stockNozTex;
         static readonly Dictionary<string, Material> finishMats = new();
         Transform petals; float petalOpen;
 
@@ -181,6 +245,25 @@ namespace BDArmory.Avionics
                     panelTex.SetPixel(x, y, new Color(v, v, v, 1));
                 }
             panelTex.Apply(true);
+            // Stock style: clean off-white with soft grime and faint seams, like Squad's parts
+            stockTex = new Texture2D(256, 256, TextureFormat.RGBA32, true) { wrapMode = TextureWrapMode.Repeat, anisoLevel = 4 };
+            for (int y = 0; y < 256; y++)
+                for (int x = 0; x < 256; x++)
+                {
+                    float v = 0.9f + 0.07f * Mathf.PerlinNoise(x * 0.025f, y * 0.025f) - 0.06f * Mathf.PerlinNoise(x * 0.18f + 40, y * 0.18f);
+                    if (y % 128 < 1 || x % 128 < 1) v *= 0.86f;
+                    stockTex.SetPixel(x, y, new Color(v, v, v, 1));
+                }
+            stockTex.Apply(true);
+            stockNozTex = new Texture2D(256, 64, TextureFormat.RGBA32, true) { wrapMode = TextureWrapMode.Repeat };
+            for (int y = 0; y < 64; y++)
+                for (int x = 0; x < 256; x++)
+                {
+                    float v = Mathf.Lerp(0.42f, 0.16f, y / 63f) * (0.92f + 0.08f * Mathf.PerlinNoise(x * 0.08f, y * 0.2f));
+                    if (x % 32 == 0) v *= 0.8f;
+                    stockNozTex.SetPixel(x, y, new Color(v, v, v * 1.02f, 1));
+                }
+            stockNozTex.Apply(true);
             // Nozzle: heat tint along the length (steel -> straw -> blue -> dark), petal seams around
             nozzleTex = new Texture2D(256, 64, TextureFormat.RGBA32, true) { wrapMode = TextureWrapMode.Repeat };
             Color[] heat = { new(0.62f, 0.62f, 0.6f), new(0.72f, 0.62f, 0.4f), new(0.45f, 0.38f, 0.55f), new(0.28f, 0.32f, 0.45f), new(0.15f, 0.14f, 0.14f) };
@@ -217,12 +300,13 @@ namespace BDArmory.Avionics
 
         Material Finish()
         {
-            if (!finishMats.TryGetValue(finish, out var m) || m == null)
+            string key = finish + "|" + style;
+            if (!finishMats.TryGetValue(key, out var m) || m == null)
             {
-                m = new Material(Shader.Find("KSP/Specular")) { mainTexture = panelTex, color = Finishes.TryGetValue(finish, out var c) ? c : Finishes["Grey"] };
-                m.SetFloat("_Shininess", finish == "Bare metal" ? 0.9f : 0.35f);
+                m = new Material(Shader.Find("KSP/Specular")) { mainTexture = style == "Stock" ? stockTex : panelTex, color = Finishes.TryGetValue(finish, out var c) ? c : Finishes["Grey"] };
+                m.SetFloat("_Shininess", finish == "Bare metal" ? 0.9f : style == "Stock" ? 0.25f : 0.35f);
                 m.SetColor("_SpecColor", finish == "Bare metal" ? new Color(0.8f, 0.8f, 0.8f) : new Color(0.35f, 0.35f, 0.35f));
-                finishMats[finish] = m;
+                finishMats[key] = m;
             }
             return m;
         }
@@ -244,6 +328,8 @@ namespace BDArmory.Avionics
             }
             if (nozzleMat == null) { nozzleMat = new Material(Shader.Find("KSP/Emissive/Specular") ?? Shader.Find("KSP/Specular")) { mainTexture = nozzleTex, color = Color.white }; nozzleMat.SetFloat("_Shininess", 0.5f); }
             var skin = Finish();
+            nozzleMat.mainTexture = style == "Stock" ? stockNozTex : nozzleTex;
+            if (!Jet) { BuildShaftEngine(skin, moveChildren); return; }
 
             float D = diameter, R = D / 2, by = Mathf.Min(bypass, 10f);
             float Rc = R * Mathf.Clamp(1f / Mathf.Sqrt(1 + bypass), 0.35f, 1f);
@@ -330,6 +416,88 @@ namespace BDArmory.Avionics
         }
 
         Renderer blurQuad;
+
+        /// <summary>Turboprop (nacelle, spinner, propeller, exhaust stubs) or turboshaft (compact core, intake, exhaust stub).</summary>
+        void BuildShaftEngine(Material skin, bool moveChildren)
+        {
+            float D = diameter, R = D / 2, L = D * (Prop ? 3.2f : 3f);
+            float yTop = L / 2, yBot = -L / 2;
+            var body = new List<Vector2> { new(0.62f * R, yTop) };
+            for (int i = 1; i <= 4; i++) { float a = i / 4f * Mathf.PI / 2; body.Add(new Vector2(Mathf.Lerp(0.62f * R, R, Mathf.Sin(a)), yTop - 0.3f * R * (1 - Mathf.Cos(a)))); }
+            body.Add(new Vector2(R * 1.02f, yTop - 0.45f * L)); body.Add(new Vector2(R * 0.9f, yTop - 0.8f * L)); body.Add(new Vector2(R * 0.55f, yBot)); body.Add(new Vector2(0.005f, yBot - 0.08f * R));
+            var go = Lathe("nacelle", body, skin, 40, 2f * Mathf.PI * R / 1.2f);
+            var mc = go.AddComponent<MeshCollider>(); mc.convex = true; mc.sharedMesh = go.GetComponent<MeshFilter>().sharedMesh;
+            // intake: chin scoop (prop) or front annulus (shaft)
+            if (Prop) Lathe("intake", new List<Vector2> { new(0.32f * R, yTop - 0.35f * L), new(0.32f * R, yTop - 0.15f * L), new(0.005f, yTop - 0.15f * L) }, darkMat, 20, 1, Sub("scoop", new Vector3(0, yTop - 0.1f * L, R * 0.85f), Quaternion.identity));
+            else Lathe("intakeFace", new List<Vector2> { new(0.005f, yTop + 0.001f), new(0.6f * R, yTop + 0.001f) }, darkMat, 32, 1);
+            // exhaust stubs angled out at the back
+            for (int side = -1; side <= 1; side += 2)
+            {
+                if (Shaft && side < 0) continue;
+                var stub = Sub("exhaust" + side, new Vector3(side * R * 0.8f, yBot + 0.3f * L, 0), Quaternion.Euler(0, 0, side * (Shaft ? 60f : 35f)));
+                Lathe("stub", new List<Vector2> { new(0.3f * R, 0.25f * R), new(0.3f * R, -0.25f * R), new(0.26f * R, -0.25f * R), new(0.26f * R, 0.25f * R) }, nozzleMat, 20, 1, stub);
+            }
+            float yTip = yTop;
+            petals = null; fanSpin = null; blurQuad = null;
+            if (Prop)
+            {
+                var spinGo = Sub("fanSpin", new Vector3(0, yTop, 0), Quaternion.identity); fanSpin = spinGo;
+                float hubR = 0.6f * R, tipLen = 1.1f * R;
+                var sp = new List<Vector2>();
+                for (int i = 0; i <= 8; i++) { float ang = i / 8f * Mathf.PI / 2; sp.Add(new Vector2(Mathf.Max(0.003f, Mathf.Sin(ang) * hubR), Mathf.Cos(ang) * tipLen)); }
+                sp.Add(new Vector2(hubR, -0.05f * D));
+                Lathe("spinner", sp, style == "Stock" ? skin : spinnerMat, 32, 1, fanSpin);
+                var bg = new GameObject("blades"); bg.transform.SetParent(fanSpin, false); bg.transform.localPosition = new Vector3(0, 0.25f * tipLen, 0);
+                bg.AddComponent<MeshFilter>().sharedMesh = PropBlades((int)blades, hubR * 0.8f, propDiameter / 2, Mathf.Clamp(propDiameter * 0.09f, 0.08f, 0.45f), reverse);
+                bg.AddComponent<MeshRenderer>().sharedMaterial = darkMat;
+                var blur = Sub("propBlur", new Vector3(0, yTop + 0.25f * tipLen + 0.01f, 0), Quaternion.Euler(-90, 0, 0)); blur.localScale = Vector3.one * propDiameter;
+                var q = GameObject.CreatePrimitive(PrimitiveType.Quad); Destroy(q.GetComponent<Collider>()); q.transform.SetParent(blur, false);
+                blurQuad = q.GetComponent<Renderer>(); blurQuad.material = new Material(blurMat); blurQuad.enabled = false;
+                yTip = yTop + tipLen;
+            }
+            if (thrustT != null) { thrustT.localPosition = new Vector3(0, yBot, 0); thrustT.localRotation = Quaternion.Euler(reverse ? -90 : 90, 0, 0); }
+            if (smokeT != null) { smokeT.localPosition = new Vector3(0, yBot, 0); smokeT.localRotation = Quaternion.Euler(90, 0, 0); }
+            int size = Mathf.Clamp(Mathf.RoundToInt(D / 1.25f), 0, 4);
+            SetNode("top", new Vector3(0, yTip, 0), Vector3.up, moveChildren, size);
+            SetNode("bottom", new Vector3(0, yBot - 0.08f * R, 0), Vector3.down, moveChildren, size);
+            if (part.srfAttachNode != null) { part.srfAttachNode.position = part.srfAttachNode.originalPosition = new Vector3(R * 1.02f, 0, 0); part.srfAttachNode.orientation = part.srfAttachNode.originalOrientation = Vector3.right; }
+            if (HighLogic.LoadedSceneIsFlight && part.DragCubes != null) { part.DragCubes.Procedural = true; part.DragCubes.ForceUpdate(true, true, true); }
+        }
+
+        Transform Sub(string name, Vector3 pos, Quaternion rot)
+        {
+            var g = new GameObject(name); g.transform.SetParent(jetRoot, false); g.transform.localPosition = pos; g.transform.localRotation = rot; built.Add(g);
+            return g.transform;
+        }
+
+        /// <summary>Propeller blades: broad, tapered, twisted; reverse pitch flips the blade angle.</summary>
+        static Mesh PropBlades(int n, float r0, float r1, float chord, bool rev)
+        {
+            const int S = 6;
+            var v = new List<Vector3>(); var tri = new List<int>();
+            for (int b = 0; b < n; b++)
+            {
+                var q = Quaternion.Euler(0, b * 360f / n, 0);
+                int k0 = v.Count;
+                for (int j = 0; j <= S; j++)
+                {
+                    float f = j / (float)S, r = Mathf.Lerp(r0, r1, f);
+                    float c = chord * (f < 0.3f ? Mathf.Lerp(0.7f, 1f, f / 0.3f) : Mathf.Lerp(1f, 0.45f, (f - 0.3f) / 0.7f));
+                    float pitch = rev ? -15f : Mathf.Lerp(55f, 18f, f);
+                    var twist = Quaternion.AngleAxis(pitch, Vector3.right);
+                    Vector3 mid = new(r, 0, 0);
+                    v.Add(q * (mid + twist * new Vector3(0, 0, -c / 2)));
+                    v.Add(q * (mid + twist * new Vector3(0, 0, c / 2)));
+                }
+                for (int j = 0; j < S; j++)
+                {
+                    int a = k0 + j * 2;
+                    tri.AddRange(new[] { a, a + 1, a + 3, a, a + 3, a + 2, a, a + 3, a + 1, a, a + 2, a + 3 });
+                }
+            }
+            var m = new Mesh { name = "propBlades" }; m.SetVertices(v); m.SetTriangles(tri, 0); m.RecalculateNormals(); m.RecalculateBounds();
+            return m;
+        }
 
         /// <summary>Surface of revolution about Y. The profile's direction sets which side faces out (left of travel when going -Y).</summary>
         GameObject Lathe(string name, List<Vector2> prof, Material mat, int seg, float uRepeat, Transform parent = null)
@@ -451,6 +619,15 @@ namespace BDArmory.Avionics
             if (!HighLogic.LoadedSceneIsFlight) return;
             var e = mm != null && !mm.runningPrimary ? wet : dry;
             float thr = e != null && e.EngineIgnited ? e.currentThrottle : 0;
+            if (Prop)
+            {
+                rpm = Mathf.MoveTowards(rpm, e != null && e.EngineIgnited ? Mathf.Lerp(250f, 1100f, thr) : 0, Time.deltaTime * 400f);
+                if (fanSpin != null && rpm > 0) fanSpin.Rotate(Vector3.up, rpm * 6f * Time.deltaTime, Space.Self);
+                if (blurQuad != null) { float ab = Mathf.Clamp01((rpm - 400f) / 500f) * 0.5f; blurQuad.enabled = ab > 0.01f; if (blurQuad.enabled) blurQuad.material.color = new Color(1, 1, 1, ab); }
+                if (nozzleMat != null) nozzleMat.SetColor("_EmissiveColor", Color.Lerp(Color.black, new Color(0.5f, 0.2f, 0.08f), thr * 0.4f));
+                return;
+            }
+            if (Shaft) return;
             rpm = Mathf.MoveTowards(rpm, e != null && e.EngineIgnited ? Mathf.Lerp(300f, 2400f / Mathf.Max(0.5f, diameter), thr) : 0, Time.deltaTime * 800f);
             if (fanSpin != null && rpm > 0) fanSpin.Rotate(Vector3.up, rpm * 6f * Time.deltaTime, Space.Self);
             if (blurQuad != null)
