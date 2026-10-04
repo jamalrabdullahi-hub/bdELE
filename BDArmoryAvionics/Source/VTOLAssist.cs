@@ -579,7 +579,7 @@ namespace BDArmory.Avionics
         public static bool HasRotors(IEnumerable<Part> parts)
         {
             if (parts == null) return false;
-            foreach (var p in parts) foreach (PartModule m in p.Modules) if (m.moduleName == "ModuleRoboticServoRotor") return true;
+            foreach (var p in parts) foreach (PartModule m in p.Modules) if (m.moduleName == "ModuleRoboticServoRotor" || m.moduleName == "ModuleHeliRotor") return true;
             return false;
         }
 
