@@ -146,7 +146,7 @@ namespace BDArmory.Avionics
                 for (int tries = 0; tries < 8 && !ok; tries++)
                 {
                     float side = ((i + tries) % 2 == 0 ? 1 : -1) * (700f + 150f * tries);
-                    float alongOff = ((i % 3) - 1) * 900f + tries * 120f;
+                    float alongOff = ((i % 3) - 1) * 900f + tries * 120f + UnityEngine.Random.Range(-500f, 500f); // mobile SAMs: a different spot each visit
                     pos = center + (Vector3d)(across * side + along * alongOff);
                     ok = body.TerrainAltitude(body.GetLatitude(pos), body.GetLongitude(pos)) > 2;
                 }

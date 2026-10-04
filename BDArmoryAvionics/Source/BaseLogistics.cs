@@ -17,7 +17,7 @@ namespace BDArmory.Avionics
         public string craft = "", path = "";
         public int authorized = 2, available = 2, lost;
         public string role = "Fighter"; // Fighter, Strike, SEAD - what the AI commander uses it for
-        public static readonly string[] Roles = ["Fighter", "Strike", "SEAD", "Multirole"];
+        public static readonly string[] Roles = ["Fighter", "Strike", "SEAD", "Multirole", "Support"];
         public bool Can(string mission) => role == "Multirole" || role == mission;
     }
 
@@ -299,9 +299,10 @@ namespace BDArmory.Avionics
             string[] aa = ["aim", "r73", "r77", "r27", "meteor", "amraam", "sidewinder", "python", "mica", "iris", "hhq", "phoenix", "sparrow"];
             string[] ag = ["bomb", "mk8", "jdam", "gbu", "cbu", "agm", "harm", "tow", "hellfire", "maverick", "cruise", "rbs", "kh", "rocket", "hydra", "jsow", "torpedo"];
             string[] arm = ["harm", "antirad", "kh31", "alarm"];
+            bool hasRadarAny;
             foreach (var (name, path) in CraftFiles())
             {
-                bool wm = false, ai = false, hasAA = false, hasAG = false, hasARM = false;
+                bool wm = false, ai = false, hasAA = false, hasAG = false, hasARM = false; hasRadarAny = false;
                 string part = "";
                 try
                 {
@@ -311,6 +312,7 @@ namespace BDArmory.Avionics
                         if (l.StartsWith("part = ")) part = l.Substring(7).ToLowerInvariant();
                         else if (l == "name = MissileFire") wm = true;
                         else if (l == "name = BDModulePilotAI") ai = true;
+                        else if (l == "name = ModuleRadar") hasRadarAny = true;
                         else if (l == "name = MissileLauncher" || l == "name = BDModularGuidance")
                         {
                             bool isAA = false; foreach (var k in aa) if (part.Contains(k)) isAA = true;
@@ -337,7 +339,7 @@ namespace BDArmory.Avionics
                 }
                 catch { }
                 if (capacity >= 6) { Debug.Log($"[BDArmoryAvionics]: auto-stock: {name} skipped (transport, {capacity} seats)"); continue; }
-                string role = hasAA && hasAG ? "Multirole" : hasARM && !hasAG ? "SEAD" : hasAG ? "Strike" : "Fighter";
+                string role = hasAA && hasAG ? "Multirole" : hasARM && !hasAG ? "SEAD" : hasAG ? "Strike" : hasAA ? "Fighter" : hasRadarAny ? "Support" : "Fighter"; // Support = radar, no missiles (AWACS)
                 list.Add((name, path, role));
             }
             // one entry per craft name

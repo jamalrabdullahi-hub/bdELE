@@ -101,6 +101,7 @@ namespace BDArmory.Avionics
         public static bool ShowLM = false;
         public static bool MissileDLZ = true;
         public static bool ShowFeeds = false;
+        public static int Difficulty = 1;               // PvE: 0 Recruit, 1 Regular, 2 Veteran, 3 Ace
         public static bool FCSAll = true;               // ELE flight control on every AI aircraft (not only craft with the part-menu toggle on)
         public static float TheatreSpawnKm = 150f;      // AI flights materialise inside this slant range (atmospheric craft only)
         public static bool RadarTerrainMask = true;     // ELE sensor engine: radars can't see through hills at any range
@@ -215,6 +216,7 @@ namespace BDArmory.Avionics
                 RadarTerrainMask = GetBool(node, "RadarTerrainMask", RadarTerrainMask);
                 TheatreSpawnKm = Mathf.Clamp(GetFloat(node, "TheatreSpawnKm", TheatreSpawnKm), 20f, 200f);
                 FCSAll = GetBool(node, "FCSAll", FCSAll);
+                Difficulty = Mathf.Clamp(GetInt(node, "Difficulty", Difficulty), 0, 3);
                 ExplosionSizeCurve = Mathf.Clamp(GetFloat(node, "ExplosionSizeCurve", ExplosionSizeCurve), 0.3f, 3f);
                 ExplosionSizeCap = Mathf.Clamp(GetFloat(node, "ExplosionSizeCap", ExplosionSizeCap), 1f, 12f);
                 ShrapnelRangeMult = Mathf.Clamp(GetFloat(node, "ShrapnelRangeMult", ShrapnelRangeMult), 1f, 4f);
@@ -315,6 +317,7 @@ namespace BDArmory.Avionics
                 node.AddValue("RadarTerrainMask", RadarTerrainMask);
                 node.AddValue("TheatreSpawnKm", TheatreSpawnKm);
                 node.AddValue("FCSAll", FCSAll);
+                node.AddValue("Difficulty", Difficulty);
                 node.AddValue("ExplosionSizeCurve", ExplosionSizeCurve);
                 node.AddValue("ExplosionSizeCap", ExplosionSizeCap);
                 node.AddValue("ShrapnelRangeMult", ShrapnelRangeMult);

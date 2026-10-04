@@ -444,11 +444,12 @@ namespace BDArmory.Avionics
             var btn = BDArmorySetup.ButtonStyle; var sel = BDArmorySetup.SelectedButtonStyle;
             var sc = FactionsScenario.Instance;
             float w = rect.width - 16, y = 22;
-            string[] tabs = ["Factions", "Bases", "Commander"];
+            string[] tabs = ["Factions", "Bases", "Commander", "Missions"];
             for (int i = 0; i < tabs.Length; i++) if (GUI.Button(new Rect(8 + i * 104, y, 100, 22), tabs[i], tab == i ? sel : btn)) tab = i;
             y += 28;
 
             if (tab == 2) { DrawCommander(new Rect(8, y, w, rect.height - y - 8)); GUI.DragWindow(new Rect(0, 0, rect.width - 22, 20)); return; }
+            if (tab == 3) { if (MissionsScenario.Instance != null) MissionsScenario.Instance.Draw(new Rect(8, y, w, rect.height - y - 8)); GUI.DragWindow(new Rect(0, 0, rect.width - 22, 20)); return; }
             if (tab == 0)
             {
                 for (int i = 0; i < sc.factions.Count; i++)
