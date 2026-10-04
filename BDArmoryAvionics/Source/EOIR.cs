@@ -91,15 +91,43 @@ namespace BDArmory.Avionics
 
         public static void ClearTrack() { trackVessel = null; trackGround = false; trackName = ""; }
 
-        void OnDestroy() => Detach();
+        void OnDestroy() { Detach(); if (overlay != null) Destroy(overlay); }
 
         // ---- Thermal image: command buffer on the near flight camera (renders last, so it sees the whole scene) ----
 
+        // Preferred: ELE's thermal shader on a quad just in front of the camera (grabs the finished scene; reliable with MSAA/HDR).
+        GameObject overlay; Material thermalMat;
+
         void LateUpdate()
         {
-            bool want = HullCam.Current != null && Mode != 0 && BDAShaderLoader.GrayscaleEffectShader != null;
             var cam = FlightCamera.fetch != null ? FlightCamera.fetch.mainCamera : null;
-            if (!want || cam == null) { Detach(); return; }
+            bool active = HullCam.Current != null && Mode != 0 && cam != null;
+            if (VolumetricShaders.Thermal != null)
+            {
+                Detach();
+                if (!active) { if (overlay != null) overlay.SetActive(false); return; }
+                if (overlay == null)
+                {
+                    overlay = GameObject.CreatePrimitive(PrimitiveType.Quad);
+                    Destroy(overlay.GetComponent<Collider>());
+                    overlay.name = "ELE thermal overlay";
+                    thermalMat = new Material(VolumetricShaders.Thermal);
+                    var mr = overlay.GetComponent<MeshRenderer>();
+                    mr.sharedMaterial = thermalMat; mr.shadowCastingMode = ShadowCastingMode.Off; mr.receiveShadows = false;
+                }
+                if (overlay.transform.parent != cam.transform) overlay.transform.SetParent(cam.transform, false);
+                overlay.layer = 0; // Default: always drawn by the near flight camera
+                float d = cam.nearClipPlane + 0.05f, h = 2f * d * Mathf.Tan(cam.fieldOfView * 0.5f * Mathf.Deg2Rad) * 1.05f;
+                overlay.transform.localPosition = new Vector3(0, 0, d);
+                overlay.transform.localRotation = Quaternion.identity;
+                overlay.transform.localScale = new Vector3(h * cam.aspect, h, 1);
+                thermalMat.SetFloat("_Mode", Mode);
+                overlay.SetActive(true);
+                return;
+            }
+            // Fallback: command buffer with BDArmory's grayscale shader.
+            bool want = active && BDAShaderLoader.GrayscaleEffectShader != null;
+            if (!want) { Detach(); return; }
             if (attached != cam || cbMode != Mode) { Detach(); Attach(cam); }
         }
 
