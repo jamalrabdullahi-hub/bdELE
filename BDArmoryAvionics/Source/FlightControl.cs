@@ -223,7 +223,7 @@ namespace BDArmory.Avionics
                 st = new State { m = m };
                 states[ai] = st;
             }
-            return st.m != null && st.m.fcsEnabled ? st : null;
+            return st.m != null && (st.m.fcsEnabled || AvionicsSettings.FCSAll) ? st : null;
         }
 
         public static bool Enabled(Vessel v)

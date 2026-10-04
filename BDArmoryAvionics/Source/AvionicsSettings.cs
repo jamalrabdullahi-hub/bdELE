@@ -101,6 +101,7 @@ namespace BDArmory.Avionics
         public static bool ShowLM = false;
         public static bool MissileDLZ = true;
         public static bool ShowFeeds = false;
+        public static bool FCSAll = true;               // ELE flight control on every AI aircraft (not only craft with the part-menu toggle on)
         public static float TheatreSpawnKm = 150f;      // AI flights materialise inside this slant range (atmospheric craft only)
         public static bool RadarTerrainMask = true;     // ELE sensor engine: radars can't see through hills at any range
         public static bool VaporCones = true;           // transonic vapor cones + shock ring at Mach 1 (volumetric)
@@ -213,6 +214,7 @@ namespace BDArmory.Avionics
                 VaporCones = GetBool(node, "VaporCones", VaporCones);
                 RadarTerrainMask = GetBool(node, "RadarTerrainMask", RadarTerrainMask);
                 TheatreSpawnKm = Mathf.Clamp(GetFloat(node, "TheatreSpawnKm", TheatreSpawnKm), 20f, 200f);
+                FCSAll = GetBool(node, "FCSAll", FCSAll);
                 ExplosionSizeCurve = Mathf.Clamp(GetFloat(node, "ExplosionSizeCurve", ExplosionSizeCurve), 0.3f, 3f);
                 ExplosionSizeCap = Mathf.Clamp(GetFloat(node, "ExplosionSizeCap", ExplosionSizeCap), 1f, 12f);
                 ShrapnelRangeMult = Mathf.Clamp(GetFloat(node, "ShrapnelRangeMult", ShrapnelRangeMult), 1f, 4f);
@@ -312,6 +314,7 @@ namespace BDArmory.Avionics
                 node.AddValue("VaporCones", VaporCones);
                 node.AddValue("RadarTerrainMask", RadarTerrainMask);
                 node.AddValue("TheatreSpawnKm", TheatreSpawnKm);
+                node.AddValue("FCSAll", FCSAll);
                 node.AddValue("ExplosionSizeCurve", ExplosionSizeCurve);
                 node.AddValue("ExplosionSizeCap", ExplosionSizeCap);
                 node.AddValue("ShrapnelRangeMult", ShrapnelRangeMult);
