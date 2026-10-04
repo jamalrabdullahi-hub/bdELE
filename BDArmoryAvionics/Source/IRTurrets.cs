@@ -33,6 +33,9 @@ namespace BDArmory.Avionics
         [KSPField(isPersistant = true)] public Vector3 calPivot = Vector3.zero; // a point on the axis, in that frame
         [KSPField(isPersistant = true)] public float calGain = 1f;           // degrees of turn per unit of servo position
         public bool Measured => calFrame >= 0;
+        // VTOL tilt mechanism (set in the VTOL designer): 0 not a tilt servo, 1 tilt, 2 tilt + differential yaw. Tilt servos aren't turrets.
+        [KSPField(isPersistant = true)] public int tiltRole = 0;
+        [KSPField(isPersistant = true)] public float tiltHover = 0f, tiltCruise = 90f, tiltYaw = 10f;
         // Per turret: the craft's directions as you defined them in the tool (root-part frame; zero = use the root part's own).
         [KSPField(isPersistant = true)] public Vector3 refNose = Vector3.zero;
         [KSPField(isPersistant = true)] public Vector3 refUp = Vector3.zero;
@@ -262,7 +265,7 @@ namespace BDArmory.Avionics
                 for (var q = p.parent; q != null; q = q.parent)
                 {
                     var m = q.FindModuleImplementing<ModuleIRTurret>();
-                    if (m == null || (!m.aiming && !includeDisabled)) continue;
+                    if (m == null || (!m.aiming && !includeDisabled) || m.tiltRole != 0) continue;
                     var servo = IRServo.Find(q);
                     if (servo == null || !IRServo.Rotational(servo)) continue;
                     def.chain.Insert(0, (q, servo, m));

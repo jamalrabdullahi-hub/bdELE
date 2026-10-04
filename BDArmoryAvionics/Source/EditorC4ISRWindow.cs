@@ -200,6 +200,8 @@ namespace BDArmory.Avionics
             y += 26;
             if (GUI.Button(new Rect(0, y, w, 22), EditorTurretWindow.Show ? "IR turret tool (open)" : "Open IR turret tool", EditorTurretWindow.Show ? sel : btn)) EditorTurretWindow.Show = !EditorTurretWindow.Show;
             y += 26;
+            if (GUI.Button(new Rect(0, y, w, 22), EditorVTOLWindow.Show ? "VTOL designer (open)" : "Open VTOL designer", EditorVTOLWindow.Show ? sel : btn)) EditorVTOLWindow.Show = !EditorVTOLWindow.Show;
+            y += 26;
 
             if (fit.pilot != null)
             {
