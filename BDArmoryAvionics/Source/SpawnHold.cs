@@ -20,21 +20,35 @@ namespace BDArmory.Avionics
         Vector3 dir;
         float speed, t0, aiSince = -1, nextActivate, releasedAt = -1, nextLog, holdAlt;
         bool velocitySet, holding = true;
+        public bool armed = true; // false while BDArmory is still placing the craft (teleports / re-rotations)
         int catches;
 
-        public static void Attach(Vessel v, Vector3 dir, float speed)
+        public static SpawnHold Attach(Vessel v, Vector3 dir, float speed, bool armed = true)
         {
-            if (v == null || v.GetComponent<SpawnHold>() != null) return;
+            if (v == null) return null;
+            if (v.GetComponent<SpawnHold>() is SpawnHold existing) return existing;
             var h = v.gameObject.AddComponent<SpawnHold>();
             h.v = v; h.dir = dir.normalized; h.speed = speed; h.t0 = Time.time; h.holdAlt = (float)v.altitude;
+            h.armed = armed;
             v.OnFlyByWire += h.Fly;
-            Debug.Log($"[BDArmoryAvionics]: spawn hold on {v.GetName()}");
+            Debug.Log($"[BDArmoryAvionics]: spawn hold on {v.GetName()}{(armed ? "" : " (waiting for the spawner)")}");
+            return h;
         }
 
         void FixedUpdate()
         {
             if (v == null || v.packed || !v.loaded) return;
-            if (!velocitySet) { v.ChangeWorldVelocity((Vector3d)(dir * speed) - v.srf_velocity); velocitySet = true; }
+            if (!armed) { v.IgnoreGForces(2); t0 = Time.time; return; } // don't fight the spawner: just keep G-forces from breaking it
+            if (!velocitySet)
+            {
+                // speed along the craft's real nose (level), so it doesn't arrive flying sideways after the spawner re-rotated it
+                Vector3 upv = (v.CoM - v.mainBody.position).normalized;
+                Vector3 nose = Vector3.ProjectOnPlane(v.ReferenceTransform.up, upv);
+                if (nose.sqrMagnitude < 0.01f) nose = dir;
+                v.ChangeWorldVelocity((Vector3d)(nose.normalized * speed) - v.srf_velocity);
+                v.IgnoreGForces(10);
+                holdAlt = (float)v.altitude; velocitySet = true;
+            }
             var ai = v.ActiveController().PilotAI;
             var wm = v.ActiveController().WM;
 
@@ -101,7 +115,7 @@ namespace BDArmory.Avionics
         /// <summary>Wings level, climb back to the spawn altitude (gently), full throttle.</summary>
         void Fly(FlightCtrlState s)
         {
-            if (!holding || v == null || v.packed) return;
+            if (!holding || !armed || v == null || v.packed) return;
             var rt = v.ReferenceTransform;
             Vector3 up = (v.CoM - v.mainBody.position).normalized;
             Vector3 nose = rt.up, right = rt.right, top = -rt.forward;
