@@ -193,11 +193,13 @@ namespace BDArmory.Avionics
 
         // ---- Spawning ----
 
+        public static ExplosionKind? ForceKind; // test panel
         public static void Spawn(Vector3 pos, float tnt, Part part, string weapon, bool shaped)
         {
             var d = Instance;
             if (d == null || d.fire == null || AvionicsSettings.ExplosionQuality == 0) return;
             var kind = Classify(pos, tnt, part, weapon, shaped, out float groundDist, out Vector3 up);
+            if (ForceKind.HasValue) kind = ForceKind.Value;
             if (kind == ExplosionKind.Small && AvionicsSettings.ExplosionQuality < 3) return; // cannon shells: BDArmory's own effect is enough
             float k = ExplosionScaling.Factor(tnt), R = Shrapnel.BlastRadius(part, tnt), q = Q;
             Vector3 local = d.transform.InverseTransformPoint(pos);
