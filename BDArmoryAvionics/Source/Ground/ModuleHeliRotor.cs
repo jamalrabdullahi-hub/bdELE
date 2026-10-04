@@ -53,6 +53,12 @@ namespace BDArmory.Avionics
             float thrust = engine.finalThrust;
             if (thrust > 0.1f && part.Rigidbody != null && !TailRotorWorking())
                 part.Rigidbody.AddTorque(part.transform.up * thrust * torqueArm, ForceMode.Force);
+            float bend = DynamicDamage.Bend(part); // bent blades: once-per-rev shake that grows with rpm
+            if (bend > 0 && rpm > 30 && part.Rigidbody != null)
+            {
+                float a = Time.time * rpm / 60f * Mathf.PI * 2;
+                part.Rigidbody.AddForce((part.transform.right * Mathf.Cos(a) + part.transform.forward * Mathf.Sin(a)) * thrust * 0.15f * bend, ForceMode.Force);
+            }
             status = on ? $"{rpm:F0} rpm, power {ratio * 100:F0}%{(TailRotorWorking() ? "" : ", NO TAIL ROTOR")}" : ratio <= 0 ? "no turboshaft power" : "stopped";
         }
 

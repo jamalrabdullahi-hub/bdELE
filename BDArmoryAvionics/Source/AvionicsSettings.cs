@@ -105,6 +105,8 @@ namespace BDArmory.Avionics
         public static bool FCSAll = true;               // ELE flight control on every AI aircraft (not only craft with the part-menu toggle on)
         public static float TheatreSpawnKm = 150f;      // AI flights materialise inside this slant range (atmospheric craft only)
         public static bool RadarTerrainMask = true;     // ELE sensor engine: radars can't see through hills at any range
+        public static bool DynamicDamage = true;        // dents, scorch marks and bent parts from hits
+        public static float DamageIntensity = 1f;
         public static bool VaporCones = true;           // transonic vapor cones + shock ring at Mach 1 (volumetric)
         public static bool Volumetric = true;           // real volumetric explosions / haze / shock (needs the ELE shader bundle)
         public static int ExplosionQuality = 1;         // 0 off, 1 low, 2 medium, 3 high (extra explosion layers)
@@ -213,6 +215,8 @@ namespace BDArmory.Avionics
                 ExplosionShake = GetBool(node, "ExplosionShake", ExplosionShake);
                 Volumetric = GetBool(node, "Volumetric", Volumetric);
                 VaporCones = GetBool(node, "VaporCones", VaporCones);
+                DynamicDamage = GetBool(node, "DynamicDamage", DynamicDamage);
+                if (float.TryParse(node.GetValue("DamageIntensity"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var di)) DamageIntensity = di;
                 RadarTerrainMask = GetBool(node, "RadarTerrainMask", RadarTerrainMask);
                 TheatreSpawnKm = Mathf.Clamp(GetFloat(node, "TheatreSpawnKm", TheatreSpawnKm), 20f, 200f);
                 FCSAll = GetBool(node, "FCSAll", FCSAll);
@@ -314,6 +318,8 @@ namespace BDArmory.Avionics
                 node.AddValue("ExplosionShake", ExplosionShake);
                 node.AddValue("Volumetric", Volumetric);
                 node.AddValue("VaporCones", VaporCones);
+                node.AddValue("DynamicDamage", DynamicDamage);
+                node.AddValue("DamageIntensity", DamageIntensity.ToString(System.Globalization.CultureInfo.InvariantCulture));
                 node.AddValue("RadarTerrainMask", RadarTerrainMask);
                 node.AddValue("TheatreSpawnKm", TheatreSpawnKm);
                 node.AddValue("FCSAll", FCSAll);

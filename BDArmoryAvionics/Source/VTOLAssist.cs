@@ -10,7 +10,7 @@ using BDArmory.Utils;
 
 namespace BDArmory.Avionics
 {
-    public enum VTOLMode { Off, Hover, GoTo, Land, Takeoff, Cruise, Train, Direct }
+    public enum VTOLMode { Off, Hover, GoTo, Land, Takeoff, Cruise, Train, Direct, Auto }
 
     /// <summary>
     /// Learned response of one rotation axis: angular acceleration = a * rate + b * stick + c.
@@ -122,6 +122,26 @@ namespace BDArmory.Avionics
         // Direct mode (FPV): velocity, heading and target altitude come from outside every frame.
         public Vector3 directVel; public float directHeading, directTilt = 45f, directClimbMax = 30f; public double directAlt;
         public bool directGroundHug; // strike: allow commanding down to the ground
+
+        // Autopilot (AP): hold a set altitude (AGL or ASL), ground speed and heading. Speed 0 = hover on the spot.
+        [KSPField(isPersistant = true)] public float apAlt = 150f, apSpeed = 0f, apHeading = 0f;
+        [KSPField(isPersistant = true)] public bool apAGL = true;
+        string apAltText, apSpdText, apHdgText;
+
+        /// <summary>Autopilot on, holding what the craft is doing now (then the set values).</summary>
+        public void EngageAP(bool hoverHere = false, float? alt = null)
+        {
+            if (vessel == null) return;
+            if (mode != VTOLMode.Auto) { apHeading = Heading(); apSpeed = Mathf.Round((float)vessel.srfSpeed); apAlt = (float)Math.Round(apAGL ? vessel.radarAltitude : vessel.altitude); }
+            if (hoverHere) apSpeed = 0;
+            if (alt.HasValue) apAlt = alt.Value;
+            apAlt = Mathf.Max(apAGL ? 3f : -50f, apAlt);
+            Engage(VTOLMode.Auto); SetHold(vessel.CoM);
+            apAltText = apSpdText = apHdgText = null;
+        }
+
+        [KSPAction("VTOL autopilot (hold alt/speed/heading)")] public void APAction(KSPActionParam p) { if (mode == VTOLMode.Auto) Disengage("off"); else EngageAP(); }
+        [KSPAction("VTOL hover here")] public void HoverHereAction(KSPActionParam p) => EngageAP(true);
 
         public static ModuleVTOLAssist For(Vessel v)
         {
@@ -332,7 +352,7 @@ namespace BDArmory.Avionics
             }
 
             // Player directs
-            bool player = vessel == FlightGlobals.ActiveVessel && (mode == VTOLMode.Hover || mode == VTOLMode.Cruise);
+            bool player = vessel == FlightGlobals.ActiveVessel && (mode == VTOLMode.Hover || mode == VTOLMode.Cruise || mode == VTOLMode.Auto);
             float inFwd = player ? -s.pitch : 0, inSide = player ? s.roll : 0, inYaw = player ? s.yaw : 0;
             float climb = 0;
             if (player) { if (GameSettings.THROTTLE_UP.GetKey()) climb = 1; if (GameSettings.THROTTLE_DOWN.GetKey()) climb = -1; }
@@ -388,6 +408,33 @@ namespace BDArmory.Avionics
                 holdAlt = ground + (gotoLand && far < 25 ? 0 : gotoAGL);
                 if (gotoLand && far < 25 && gs.magnitude < 3) { mode = VTOLMode.Land; SetHold(target); }
             }
+            else if (mode == VTOLMode.Auto)
+            {
+                if (player)
+                {
+                    apHeading = Mathf.Repeat(apHeading + (inYaw + inSide) * 30f * dt, 360f);
+                    if (Mathf.Abs(inFwd) > 0.05f) apSpeed = Mathf.Clamp(apSpeed + inFwd * 10f * dt, 0, Mathf.Max(maxSpeed, cruiseSpeed));
+                    if (climb != 0) apAlt = Mathf.Max(apAGL ? 3f : -50f, apAlt + climb * maxClimb * 0.6f * dt);
+                }
+                heading = apHeading;
+                var aFwd = Quaternion.AngleAxis(heading, up) * north;
+                if (apSpeed < 0.5f)
+                {
+                    var hold = vessel.mainBody.GetWorldSurfacePosition(holdLat, holdLon, vessel.altitude);
+                    vCmd = Vector3.ClampMagnitude(Vector3.ProjectOnPlane((Vector3)(hold - vessel.CoMD), up) * 0.3f * resp, maxSpeed * 0.5f);
+                }
+                else { vCmd = aFwd * apSpeed; SetHold(vessel.CoM); }
+                speedLimit = Mathf.Max(maxSpeed, apSpeed);
+                if (apAGL)
+                {
+                    // terrain following: the higher of the ground here and the ground ~4 s ahead
+                    double groundHere = vessel.altitude - vessel.radarAltitude;
+                    var ahead = vessel.CoMD + (Vector3d)(aFwd * apSpeed * 4f);
+                    double groundAhead = vessel.mainBody.TerrainAltitude(vessel.mainBody.GetLatitude(ahead), vessel.mainBody.GetLongitude(ahead), true);
+                    holdAlt = Math.Max(groundHere, groundAhead) + apAlt;
+                }
+                else holdAlt = apAlt;
+            }
             else if (mode == VTOLMode.Train)
             {
                 vCmd = Vector3.ClampMagnitude(Vector3.ProjectOnPlane((Vector3)(vessel.mainBody.GetWorldSurfacePosition(holdLat, holdLon, vessel.altitude) - vessel.CoMD), up) * 0.3f, maxSpeed * 0.5f);
@@ -404,7 +451,7 @@ namespace BDArmory.Avionics
                 var hold = vessel.mainBody.GetWorldSurfacePosition(holdLat, holdLon, vessel.altitude);
                 vCmd = Vector3.ClampMagnitude(Vector3.ProjectOnPlane((Vector3)(hold - vessel.CoMD), up) * 0.3f * resp, maxSpeed * 0.5f);
             }
-            heading += inYaw * 40f * dt;
+            if (mode != VTOLMode.Auto) heading += inYaw * 40f * dt;
 
             // Tilt schedule by airspeed along the nose: hover below transitionStart, cruise at cruiseSpeed.
             float fwdSpeed = Vector3.Dot(gs, Vector3.ProjectOnPlane(bodyNose, up).normalized);
@@ -413,7 +460,7 @@ namespace BDArmory.Avionics
             float yawCmd = lastU[2];
             SetTiltSchedule(tau, yawCmd);
             VTOLParts.LiftEngines(this, false);
-            if (tau > 0.95f && fwdSpeed > cruiseSpeed * 0.9f && mode != VTOLMode.GoTo) { Engage(VTOLMode.Cruise); return; }
+            if (tau > 0.95f && fwdSpeed > cruiseSpeed * 0.9f && mode != VTOLMode.GoTo && mode != VTOLMode.Auto) { Engage(VTOLMode.Cruise); return; }
 
             // Desired thrust: lean toward the needed horizontal acceleration (limited tilt); wings carry more as tau grows.
             float tiltLim = mode == VTOLMode.Direct ? Mathf.Max(maxTilt, directTilt) : maxTilt;
@@ -432,7 +479,7 @@ namespace BDArmory.Avionics
             if (mode == VTOLMode.Train && trainStep == "done") { SaveLearning(); ScreenMessages.PostScreenMessage($"VTOL training done: {LearnedText}", 6f, ScreenMessageStyle.UPPER_CENTER); mode = VTOLMode.Hover; }
 
             // Vertical: altitude -> climb rate -> throttle, hover feed-forward learned in flight.
-            if (climb != 0) holdAlt = vessel.altitude + climb * maxClimb * 0.6f;
+            if (climb != 0 && mode != VTOLMode.Auto) holdAlt = vessel.altitude + climb * maxClimb * 0.6f;
             float vsCmd;
             if (mode == VTOLMode.Land)
             {
@@ -460,7 +507,7 @@ namespace BDArmory.Avionics
 
             VTOLParts.DiffThrust(this, s, bodyUp, diffThrust && tau < 0.5f);
             tilt = Vector3.Angle(tdir, up);
-            status = mode == VTOLMode.Train ? $"Training: {trainStep}" : $"{mode} {vessel.radarAltitude:F0} m AGL{(tau > 0.02f ? $", tilt {tau:P0}" : "")}";
+            status = mode == VTOLMode.Train ? $"Training: {trainStep}" : mode == VTOLMode.Auto ? $"AP {(apSpeed < 0.5f ? "hover" : $"{apSpeed:F0} m/s")} hdg {apHeading:000} alt {apAlt:F0} {(apAGL ? "AGL" : "ASL")}" : $"{mode} {vessel.radarAltitude:F0} m AGL{(tau > 0.02f ? $", tilt {tau:P0}" : "")}";
             Remember(rate, s);
         }
 
@@ -525,7 +572,7 @@ namespace BDArmory.Avionics
         void OnDestroy() { if (registered != null) registered.OnFlyByWire -= Fly; }
 
         // ---- Flight panel ----
-        static Rect PanelRect => new(Screen.width / 2f - 300, Screen.height - 230, 600, 46);
+        static Rect PanelRect => new(Screen.width / 2f - 300, Screen.height - 254, 600, 70);
 
         void OnGUI()
         {
@@ -554,6 +601,43 @@ namespace BDArmory.Avionics
             string line = mode == VTOLMode.Off ? $"{Type} · flight computer off · learned: {LearnedText}" + (clickMode != 0 ? " · click the ground" : "")
                 : $"{status} · V/S {vsNow:+0.0;-0.0} · GS {gs.magnitude:F1} · tilt {tilt:F0}°{(clickMode != 0 ? " · click the ground" : "")}";
             AvionicsDraw.ShadowLabel(new Rect(r.x, r.y + 27, r.width, 16), line, AvionicsDraw.LabelCenter, mode != VTOLMode.Off ? AvionicsDraw.Friendly : AvionicsDraw.HudText);
+            DrawAP(new Rect(r.x + 4, r.y + 46, r.width - 8, 20), btn, sel);
+        }
+
+        // AP row: [AP] ALT -[ ]+ AGL/ASL  SPD -[ ]+  HDG -[ ]+  [Hover here] [Hover @alt]
+        void DrawAP(Rect r, GUIStyle btn, GUIStyle sel)
+        {
+            float x = r.x, y = r.y;
+            bool ap = mode == VTOLMode.Auto;
+            if (GUI.Button(new Rect(x, y, 34, 20), "AP", ap ? sel : btn)) { if (ap) Disengage("off"); else EngageAP(); }
+            x += 38;
+            Field(ref x, y, "ALT", ref apAlt, ref apAltText, 25f, apAGL ? 3f : -50f, 30000f, btn);
+            if (GUI.Button(new Rect(x, y, 38, 20), apAGL ? "AGL" : "ASL", btn))
+            {
+                double ground = vessel.altitude - vessel.radarAltitude;
+                apAlt = (float)Math.Round(apAGL ? apAlt + ground : Math.Max(3, apAlt - ground)); apAGL = !apAGL; apAltText = null;
+            }
+            x += 42;
+            Field(ref x, y, "SPD", ref apSpeed, ref apSpdText, 5f, 0f, 300f, btn);
+            Field(ref x, y, "HDG", ref apHeading, ref apHdgText, 10f, -1e9f, 1e9f, btn);
+            apHeading = Mathf.Repeat(apHeading, 360f);
+            if (GUI.Button(new Rect(x, y, 70, 20), "Hover here", ap && apSpeed < 0.5f ? sel : btn)) EngageAP(true);
+            x += 73;
+            if (GUI.Button(new Rect(x, y, r.xMax - x, 20), $"Hover @{apAlt:F0}", btn)) EngageAP(true, apAlt);
+        }
+
+        void Field(ref float x, float y, string label, ref float value, ref string text, float step, float min, float max, GUIStyle btn)
+        {
+            AvionicsDraw.ShadowLabel(new Rect(x, y + 2, 26, 16), label, AvionicsDraw.LabelSmall, AvionicsDraw.HudText); x += 26;
+            if (GUI.Button(new Rect(x, y, 18, 20), "-", btn)) { value = Mathf.Clamp(value - step, min, max); text = null; }
+            x += 19;
+            text ??= value.ToString("F0");
+            string t = GUI.TextField(new Rect(x, y, 42, 20), text);
+            if (t != text) { text = t; if (float.TryParse(t, out var v)) value = Mathf.Clamp(v, min, max); }
+            else if (GUIUtility.keyboardControl == 0) text = value.ToString("F0");
+            x += 43;
+            if (GUI.Button(new Rect(x, y, 18, 20), "+", btn)) { value = Mathf.Clamp(value + step, min, max); text = null; }
+            x += 21;
         }
     }
 

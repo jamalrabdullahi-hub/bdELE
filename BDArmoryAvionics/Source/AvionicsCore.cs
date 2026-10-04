@@ -35,7 +35,7 @@ namespace BDArmory.Avionics
 
         void Start()
         {
-            menuRect = new Rect(Screen.width - 300, 90, 240, 730);
+            menuRect = new Rect(Screen.width - 300, 90, 240, 752);
             radarRectIndex = GUIUtils.RegisterGUIRect(new Rect());
             listRectIndex = GUIUtils.RegisterGUIRect(new Rect());
             gpsRectIndex = GUIUtils.RegisterGUIRect(new Rect());
@@ -214,6 +214,9 @@ namespace BDArmory.Avionics
             y += 22;
             AvionicsSettings.Volumetric = GUI.Toggle(new Rect(8, y, hw, 20), AvionicsSettings.Volumetric, !VolumetricShaders.Loaded ? "No shaders" : AvionicsSettings.Volumetric ? "Volumetric FX" : "Volumetric off", AvionicsSettings.Volumetric && VolumetricShaders.Loaded ? sel : btn);
             AvionicsSettings.VaporCones = GUI.Toggle(new Rect(12 + hw, y, hw, 20), AvionicsSettings.VaporCones, AvionicsSettings.VaporCones ? "Vapor cones" : "Cones off", AvionicsSettings.VaporCones ? sel : btn);
+            y += 22;
+            AvionicsSettings.DynamicDamage = GUI.Toggle(new Rect(8, y, hw, 20), AvionicsSettings.DynamicDamage, AvionicsSettings.DynamicDamage ? "Dents & bends" : "Damage FX off", AvionicsSettings.DynamicDamage ? sel : btn);
+            if (GUI.Button(new Rect(12 + hw, y, hw, 20), $"Damage x{AvionicsSettings.DamageIntensity:0.#}", btn)) AvionicsSettings.DamageIntensity = AvionicsSettings.DamageIntensity >= 2f ? 0.5f : AvionicsSettings.DamageIntensity + 0.5f;
             y += 22;
             ExplosionTestWindow.Show = GUI.Toggle(new Rect(8, y, w, 20), ExplosionTestWindow.Show, "Explosion FX test panel", ExplosionTestWindow.Show ? sel : btn);
             y += 22;
