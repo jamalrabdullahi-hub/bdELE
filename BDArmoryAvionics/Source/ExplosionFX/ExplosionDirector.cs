@@ -154,7 +154,8 @@ namespace BDArmory.Avionics
                 if (k >= 1) { t.gameObject.SetActive(false); shellPool.Push((t, m)); shells.RemoveAt(i); continue; }
                 float e = 1 - (1 - k) * (1 - k); // fast then slowing
                 t.localScale = Vector3.one * Mathf.Max(0.1f, r * 2f * e);
-                m.color = new Color(1f, 1f, 1f, 0.35f * (1 - k));
+                var sc = new Color(0.5f, 0.5f, 0.5f, 0.18f * (1 - k)); // _TintColor is doubled by KSP's particle shaders
+                m.color = sc; if (m.HasProperty("_TintColor")) m.SetColor("_TintColor", sc);
             }
             // Camera shake: remove last frame's offset, add a new decaying one.
             var cam = FlightCamera.fetch != null ? FlightCamera.fetch.transform : null;

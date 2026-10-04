@@ -48,13 +48,17 @@ namespace BDArmory.Avionics
             if (root == null || MaxScorch == 0) return;
             if (scorchMat == null)
             {
-                scorchMat = new Material(Shader.Find("KSP/Particles/Alpha Blended")) { mainTexture = AvionicsDraw.GlowTexture, color = new Color(0.05f, 0.04f, 0.03f, 0.85f) };
+                // KSP's particle shaders colour by _TintColor (x2), not .color: dark, semi-opaque soot.
+                scorchMat = new Material(Shader.Find("KSP/Particles/Alpha Blended")) { mainTexture = AvionicsDraw.GlowTexture };
+                var soot = new Color(0.02f, 0.017f, 0.015f, 0.42f);
+                scorchMat.color = soot;
+                if (scorchMat.HasProperty("_TintColor")) scorchMat.SetColor("_TintColor", soot);
                 quad = new Mesh
                 {
                     vertices = new[] { new Vector3(-0.5f, 0, -0.5f), new Vector3(-0.5f, 0, 0.5f), new Vector3(0.5f, 0, 0.5f), new Vector3(0.5f, 0, -0.5f) },
                     uv = new[] { new Vector2(0, 0), new Vector2(0, 1), new Vector2(1, 1), new Vector2(1, 0) },
                     triangles = new[] { 0, 1, 2, 0, 2, 3 },
-                    colors = new[] { Color.white, Color.white, Color.white, Color.white }
+                    colors = new[] { Color.black, Color.black, Color.black, Color.black }
                 };
                 quad.RecalculateNormals();
             }
