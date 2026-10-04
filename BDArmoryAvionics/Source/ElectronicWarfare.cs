@@ -147,7 +147,7 @@ namespace BDArmory.Avionics
         public static readonly List<Jammer> Jammers = new();
         public static readonly List<Emitter> Emitters = new();
         public const int WindowID = 71730333;
-        public static Rect rect = new(Screen.width - 760, 120, 420, 470);
+        public static Rect rect = new(Screen.width - 760, 120, 460, 500);
         static float nextEnforce;
         Vector2 scroll;
 
@@ -302,6 +302,10 @@ namespace BDArmory.Avionics
             var ti = av != null ? av.gameObject.GetComponent<TargetInfo>() : null;
             if (ti != null) { AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), $"{av.GetName()}: RCS {ti.radarBaseSignature:F1} m², with ECM/RAM {ti.radarModifiedSignature:F1} m²", small, AvionicsDraw.ScopeText); }
             y += 18;
+            AvionicsSettings.RadarTerrainMask = GUI.Toggle(new Rect(8, y, 150, 20), AvionicsSettings.RadarTerrainMask, AvionicsSettings.RadarTerrainMask ? "Terrain masking ON" : "Terrain masking off", AvionicsSettings.RadarTerrainMask ? sel : btn);
+            var se = SensorEngine.Latest;
+            AvionicsDraw.ColorLabel(new Rect(164, y + 3, w - 156, 16), $"Engine: {SensorEngine.Threads} threads, {se.ms:F1} ms/cycle, {se.pairs} pairs, {se.masked.Count} masked, {TerrainGrid.TileCount} tiles (+{TerrainGrid.Pending})", small, AvionicsDraw.ScopeText);
+            y += 24;
 
             AvionicsSettings.EWLinkJamming = GUI.Toggle(new Rect(8, y, (w - 4) / 2, 20), AvionicsSettings.EWLinkJamming, "Jamming cuts links", AvionicsSettings.EWLinkJamming ? sel : btn);
             AvionicsSettings.EWESM = GUI.Toggle(new Rect(12 + (w - 4) / 2, y, (w - 4) / 2, 20), AvionicsSettings.EWESM, "ESM emitter tracks", AvionicsSettings.EWESM ? sel : btn); y += 26;
