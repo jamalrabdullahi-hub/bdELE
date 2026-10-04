@@ -34,6 +34,8 @@ namespace BDArmory.Avionics
         bool moveParts = true;
         string lastApplied = "";
         float pvError = -1;
+        int refine;
+        string curKey = "";
         readonly List<(float need, bool limit)> pvJoints = new();
         Vector3 pvTarget, pvOrigin, pvFwd;
 
@@ -99,11 +101,10 @@ namespace BDArmory.Avionics
 
         // ---- Pose helpers ----
 
+        /// <summary>The servo's real editor position (read back every time: IR may clamp what we ask for).</summary>
         float Pos(PartModule s)
         {
-            if (pose.TryGetValue(s, out var p)) return p;
-            float v = 0; try { v = IRServo.Position(s); } catch { }
-            pose[s] = v;
+            float v = 0; try { v = IRServo.EditorPosition(s); } catch { if (pose.TryGetValue(s, out var c)) v = c; }
             if (!original.ContainsKey(s)) original[s] = v;
             return v;
         }
@@ -111,8 +112,8 @@ namespace BDArmory.Avionics
         void SetPos(PartModule s, float v)
         {
             Pos(s); // records the original
-            float min = IRServo.Min(s), max = IRServo.Max(s);
-            if (max > min && max - min < 359f) v = Mathf.Clamp(v, min, max);
+            if (IRServo.Continuous(s)) v = Mathf.Repeat(v, 360f); // full rotation: 0..360, 361 = 1
+            else v = Mathf.Clamp(v, IRServo.Min(s), IRServo.Max(s));
             IRServo.EditorSetTo(s, v);
             pose[s] = v;
             coverage = null;
@@ -190,16 +191,18 @@ namespace BDArmory.Avionics
             foreach (var (part, servo, module) in t.chain)
             {
                 float min = IRServo.Min(servo), max = IRServo.Max(servo), p = Pos(servo);
-                bool limited = max > min && max - min < 359f;
+                bool limited = !IRServo.Continuous(servo);
+                if (!limited) p = Mathf.Repeat(p, 360f);
                 string kin = module.Measured ? $"{module.calGain:F2}°/unit" : "not measured";
-                AvionicsDraw.ColorLabel(new Rect(0, y, w - 70, 16), $"{part.partInfo.title}   pos {p:F0}   {kin}", small, module.Measured ? AvionicsDraw.HudText : AvionicsDraw.Unknown);
+                string range = limited ? $"[{min:F0}..{max:F0}]" : "[0..360 wrap]";
+                AvionicsDraw.ColorLabel(new Rect(0, y, w - 70, 16), $"{part.partInfo.title}  {p:F0} {range}  {kin}", small, module.Measured ? AvionicsDraw.HudText : AvionicsDraw.Unknown);
                 if (GUI.Button(new Rect(w - 66, y - 2, 66, 18), "Exclude", btn)) { ForSym(module, m => m.aiming = false); nextDetect = 0; }
                 y += 16;
-                float lo = limited ? min : p - 180, hi = limited ? max : p + 180;
+                float lo = limited ? min : 0, hi = limited ? max : 360;
                 float np = GUI.HorizontalSlider(new Rect(0, y + 2, w - 70, 14), p, lo, hi);
                 if (GUI.Button(new Rect(w - 66, y, 32, 18), "-", btn)) np = p - 5;
                 if (GUI.Button(new Rect(w - 32, y, 32, 18), "+", btn)) np = p + 5;
-                if (Mathf.Abs(np - p) > 0.05f) { SetPos(servo, Mathf.Round(np)); lastApplied = $"{sel}|{testAz}|{testEl}|{testRange}|{moveParts}"; } // keep the hand pose until the aim test changes
+                if (Mathf.Abs(np - p) > 0.05f) { SetPos(servo, Mathf.Round(np)); lastApplied = curKey; refine = 99; } // keep the hand pose until the aim test changes
                 y += 24;
             }
             AvionicsDraw.ColorLabel(new Rect(0, y, w, 16), "Drag a slider to move that servo (the parts move). Closing the tool resets the pose.", small, AvionicsDraw.ScopeText);
@@ -212,6 +215,12 @@ namespace BDArmory.Avionics
             for (int i = 0; i < presets.Length; i++)
                 if (GUI.Button(new Rect(i * (w / 6), y, w / 6 - 3, 20), presets[i], btn)) { testAz = pv[i, 0]; testEl = pv[i, 1]; }
             y += 24;
+            AvionicsDraw.ColorLabel(new Rect(0, y, w, 16), DirsNote(s), small, s.refNose == Vector3.zero ? AvionicsDraw.Unknown : AvionicsDraw.Friendly); y += 18;
+            AvionicsDraw.ColorLabel(new Rect(0, y, w, 16), "Point the turret with the sliders above, then:", small, AvionicsDraw.ScopeText); y += 18;
+            if (GUI.Button(new Rect(0, y, w / 3 - 3, 20), "This is NOSE", btn)) DefineDir(t, true);
+            if (GUI.Button(new Rect(w / 3, y, w / 3 - 3, 20), "This is UP", btn)) DefineDir(t, false);
+            if (GUI.Button(new Rect(2 * w / 3, y, w / 3, 20), "Reset directions", btn)) { ForSym(s, m => { m.refNose = Vector3.zero; m.refUp = Vector3.zero; }); lastApplied = ""; coverage = null; }
+            y += 26;
             testAz = Mathf.Round(Slider(ref y, w, $"Bearing {testAz:F0}° (0 nose, + right)", testAz, -180, 180));
             testEl = Mathf.Round(Slider(ref y, w, $"Elevation {testEl:F0}°", testEl, -60, 90));
             testRange = Mathf.Round(Slider(ref y, w, $"Range {testRange:F0} m", testRange, 50, 3000) / 10) * 10;
@@ -300,12 +309,40 @@ namespace BDArmory.Avionics
 
         // ---- Solving with measured kinematics ----
 
-        static Vector3 CraftDir(float az, float el)
+        static Transform Root => EditorLogic.RootPart != null ? EditorLogic.RootPart.transform : null;
+
+        /// <summary>The craft's nose and up as defined in the tool (or the root part's own).</summary>
+        static void Dirs(ModuleIRTurret s, out Vector3 nose, out Vector3 up)
         {
-            var root = EditorLogic.RootPart != null ? EditorLogic.RootPart.transform : null;
-            if (root == null) return Vector3.forward;
-            Vector3 nose = root.up, top = -root.forward, right = root.right;
-            return (Quaternion.AngleAxis(az, top) * Quaternion.AngleAxis(-el, right) * nose).normalized;
+            var root = Root;
+            if (root == null) { nose = Vector3.forward; up = Vector3.up; return; }
+            nose = s.refNose != Vector3.zero ? root.TransformDirection(s.refNose) : root.up;
+            up = s.refUp != Vector3.zero ? root.TransformDirection(s.refUp) : -root.forward;
+            up = Vector3.ProjectOnPlane(up, nose);
+            if (up.sqrMagnitude < 1e-4f) up = Vector3.ProjectOnPlane(-root.forward, nose);
+            if (up.sqrMagnitude < 1e-4f) up = Vector3.ProjectOnPlane(root.right, nose);
+            nose.Normalize(); up.Normalize();
+        }
+
+        static Vector3 CraftDir(ModuleIRTurret s, float az, float el)
+        {
+            Dirs(s, out Vector3 nose, out Vector3 up);
+            Vector3 right = Vector3.Cross(up, nose).normalized;
+            return (Quaternion.AngleAxis(az, up) * Quaternion.AngleAxis(-el, right) * nose).normalized;
+        }
+
+        static string DirsNote(ModuleIRTurret s) =>
+            s.refNose == Vector3.zero ? "Directions: from the root part (set them below if Nose/Up look wrong)" :
+            s.refUp == Vector3.zero ? "Directions: NOSE set, UP from the root part" : "Directions: NOSE and UP set by you";
+
+        void DefineDir(TurretLogic.Def t, bool nose)
+        {
+            var root = Root;
+            if (root == null) return;
+            TurretLogic.AimRay(t.aimPart, out _, out Vector3 f);
+            Vector3 local = root.InverseTransformDirection(f).normalized;
+            ForSym(t.Settings, m => { if (nose) m.refNose = local; else m.refUp = local; });
+            lastApplied = ""; coverage = null;
         }
 
         /// <summary>Servo positions that point the aim part at the target, inside the limits (per-joint iterative solve, as in flight).</summary>
@@ -358,14 +395,22 @@ namespace BDArmory.Avionics
         void Preview(TurretLogic.Def t)
         {
             TurretLogic.AimRay(t.aimPart, out pvOrigin, out pvFwd);
-            pvTarget = pvOrigin + CraftDir(testAz, testEl) * testRange;
-            string key = $"{sel}|{testAz}|{testEl}|{testRange}|{moveParts}";
-            if (key == lastApplied) { pvError = Vector3.Angle(pvFwd, pvTarget - pvOrigin); return; } // posed: just read the result
-            pvError = Solve(t, pvTarget, pvJoints);
-            if (moveParts && Event.current.type == EventType.Repaint)
+            pvTarget = pvOrigin + CraftDir(t.Settings, testAz, testEl) * testRange;
+            string key = $"{sel}|{testAz}|{testEl}|{testRange}|{moveParts}|{t.Settings.refNose}|{t.Settings.refUp}";
+            curKey = key;
+            if (key != lastApplied) { refine = 0; }
+            else
+            {
+                pvError = Vector3.Angle(pvFwd, pvTarget - pvOrigin); // what the real parts give
+                if (!moveParts || pvError < 0.3f || refine >= 8) return;
+            }
+            // Solve from where the servos really are; repeat on the moved parts until they're on target (corrects any model error).
+            float predicted = Solve(t, pvTarget, pvJoints);
+            if (!moveParts) { pvError = predicted; lastApplied = key; return; }
+            if (Event.current.type == EventType.Repaint)
             {
                 for (int i = 0; i < t.chain.Count; i++) SetPos(t.chain[i].servo, pvJoints[i].need);
-                lastApplied = key;
+                lastApplied = key; refine++;
             }
         }
 
@@ -379,7 +424,7 @@ namespace BDArmory.Avionics
                 TurretLogic.AimRay(t.aimPart, out Vector3 o, out _);
                 for (int i = 0; i < nx; i++)
                     for (int j = 0; j < ny; j++)
-                        coverage[i, j] = Solve(t, o + CraftDir(-180 + 15 * i + 7.5f, -60 + 15 * j + 7.5f) * 500f, null);
+                        coverage[i, j] = Solve(t, o + CraftDir(t.Settings, -180 + 15 * i + 7.5f, -60 + 15 * j + 7.5f) * 500f, null);
                 coverageKey = key;
             }
             float cw = r.width / nx, ch = r.height / ny;

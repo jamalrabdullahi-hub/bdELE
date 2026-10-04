@@ -33,6 +33,9 @@ namespace BDArmory.Avionics
         [KSPField(isPersistant = true)] public Vector3 calPivot = Vector3.zero; // a point on the axis, in that frame
         [KSPField(isPersistant = true)] public float calGain = 1f;           // degrees of turn per unit of servo position
         public bool Measured => calFrame >= 0;
+        // Per turret: the craft's directions as you defined them in the tool (root-part frame; zero = use the root part's own).
+        [KSPField(isPersistant = true)] public Vector3 refNose = Vector3.zero;
+        [KSPField(isPersistant = true)] public Vector3 refUp = Vector3.zero;
         // Per turret (kept on its base servo):
         [KSPField(isPersistant = true)] public string priority = TurretLogic.DefaultPriority; // order; "-" prefix = disabled
         [KSPField(isPersistant = true)] public string aimWith = "Auto";       // Auto, Gun, Launcher, Camera
@@ -56,6 +59,7 @@ namespace BDArmory.Avionics
     {
         static bool resolved;
         static Type servoType;
+        static PropertyInfo editorPosition;
         static PropertyInfo position, minPos, maxPos, isRotational, isLocked, isFreeMoving, defaultSpeed, maxSpeed, defaultPosition;
         static MethodInfo moveTo, editorSetTo;
         static FieldInfo movingMesh, fixedMesh;
@@ -85,6 +89,7 @@ namespace BDArmory.Avionics
                     defaultPosition = iservo.GetProperty("DefaultPosition");
                     moveTo = iservo.GetMethod("MoveTo", new[] { typeof(float), typeof(float) });
                     editorSetTo = servoType.GetMethod("EditorSetTo", new[] { typeof(float) });
+                    editorPosition = servoType.GetProperty("EditorCommandedPosition", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                     movingMesh = servoType.GetField("movingMeshTransform", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                     fixedMesh = servoType.GetField("fixedMeshTransform", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                     break;
@@ -110,6 +115,14 @@ namespace BDArmory.Avionics
         /// <summary>Editor only: put the servo at a position right away (moves the parts on it).</summary>
         public static void EditorSetTo(PartModule s, float pos) => editorSetTo?.Invoke(s, new object[] { pos });
         public static bool CanEditorMove => editorSetTo != null;
+        /// <summary>Where the servo really is in the editor (after IR applied its own limits).</summary>
+        public static float EditorPosition(PartModule s)
+        {
+            try { if (editorPosition != null) return (float)editorPosition.GetValue(s); } catch { }
+            return Position(s);
+        }
+        /// <summary>No limits (or a full circle): positions wrap at 360.</summary>
+        public static bool Continuous(PartModule s) { float mn = Min(s), mx = Max(s); return mx <= mn || mx - mn >= 359f; }
 
         /// <summary>Candidate reference transforms for a servo (0 fixed mesh, 1 moving mesh, 2 servo part, 3 parent part).</summary>
         public static Transform Frame(PartModule s, int which)
