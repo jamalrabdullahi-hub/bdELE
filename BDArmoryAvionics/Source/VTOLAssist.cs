@@ -10,7 +10,7 @@ using BDArmory.Utils;
 
 namespace BDArmory.Avionics
 {
-    public enum VTOLMode { Off, Hover, GoTo, Land, Takeoff, Cruise, Train }
+    public enum VTOLMode { Off, Hover, GoTo, Land, Takeoff, Cruise, Train, Direct }
 
     /// <summary>
     /// Learned response of one rotation axis: angular acceleration = a * rate + b * stick + c.
@@ -118,6 +118,10 @@ namespace BDArmory.Avionics
         public float ThrustUp { get; private set; }
         float cruiseAlt, cruiseSpeedCmd;
         Vector3 lastRate; float[] lastU = new float[3]; bool haveLast;
+
+        // Direct mode (FPV): velocity, heading and target altitude come from outside every frame.
+        public Vector3 directVel; public float directHeading, directTilt = 45f, directClimbMax = 30f; public double directAlt;
+        public bool directGroundHug; // strike: allow commanding down to the ground
 
         public static ModuleVTOLAssist For(Vessel v)
         {
@@ -366,7 +370,11 @@ namespace BDArmory.Avionics
             var hRight = Vector3.Cross(up, hFwd).normalized;
             float speedLimit = maxSpeed;
             Vector3 vCmd;
-            if (mode == VTOLMode.GoTo)
+            if (mode == VTOLMode.Direct)
+            {
+                vCmd = directVel; heading = directHeading; holdAlt = directAlt; speedLimit = directVel.magnitude;
+            }
+            else if (mode == VTOLMode.GoTo)
             {
                 var target = vessel.mainBody.GetWorldSurfacePosition(gotoLat, gotoLon, vessel.mainBody.TerrainAltitude(gotoLat, gotoLon, true));
                 var d = Vector3.ProjectOnPlane((Vector3)(target - vessel.CoMD), up);
@@ -408,7 +416,8 @@ namespace BDArmory.Avionics
             if (tau > 0.95f && fwdSpeed > cruiseSpeed * 0.9f && mode != VTOLMode.GoTo) { Engage(VTOLMode.Cruise); return; }
 
             // Desired thrust: lean toward the needed horizontal acceleration (limited tilt); wings carry more as tau grows.
-            float aMax = 9.81f * Mathf.Tan(Mathf.Lerp(maxTilt, maxTilt * 0.5f, tau) * Mathf.Deg2Rad);
+            float tiltLim = mode == VTOLMode.Direct ? Mathf.Max(maxTilt, directTilt) : maxTilt;
+            float aMax = 9.81f * Mathf.Tan(Mathf.Lerp(tiltLim, tiltLim * 0.5f, tau) * Mathf.Deg2Rad);
             var aH = Vector3.ClampMagnitude((vCmd - gs) * 0.6f * resp, aMax);
             var desiredThrust = (up * 9.81f + aH).normalized;
             // Body attitude that puts the current thrust axis onto the desired one (nacelle tilt included), nose on the heading.
@@ -433,8 +442,9 @@ namespace BDArmory.Avionics
             }
             else
             {
-                double floor = vessel.altitude - vessel.radarAltitude + 3;
-                vsCmd = Mathf.Clamp((float)(Math.Max(holdAlt, floor) - vessel.altitude) * 0.5f * resp, -maxClimb, maxClimb);
+                double floor = vessel.altitude - vessel.radarAltitude + (mode == VTOLMode.Direct && directGroundHug ? -50 : 3);
+                float climbLim = mode == VTOLMode.Direct ? Mathf.Max(maxClimb, directClimbMax) : maxClimb;
+                vsCmd = Mathf.Clamp((float)(Math.Max(holdAlt, floor) - vessel.altitude) * (mode == VTOLMode.Direct ? 1.2f : 0.5f * resp), -climbLim, climbLim);
                 if (mode == VTOLMode.Takeoff && vessel.radarAltitude > takeoffAGL * 0.9f) { mode = VTOLMode.Hover; SetHold(vessel.CoM); }
             }
             float g = (float)FlightGlobals.getGeeForceAtPosition(vessel.CoM).magnitude;
