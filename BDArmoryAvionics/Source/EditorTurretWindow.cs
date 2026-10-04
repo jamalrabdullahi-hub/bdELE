@@ -30,8 +30,25 @@ namespace BDArmory.Avionics
         float pvError;
         readonly List<(float need, bool clamped)> pvJoints = new();
 
+        const string LockId = "ELE_TurretTool";
+        bool locked;
+
+        /// <summary>While the mouse is over the window, the editor camera and part picking ignore it (dragging a slider was orbiting the camera).</summary>
+        void LockEditor()
+        {
+            Vector2 m = new(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
+            bool over = Show && rect.Contains(m);
+            if (over == locked || EditorLogic.fetch == null) return;
+            if (over) EditorLogic.fetch.Lock(true, true, true, LockId);
+            else EditorLogic.fetch.Unlock(LockId);
+            locked = over;
+        }
+
+        void OnDestroy() { if (locked && EditorLogic.fetch != null) EditorLogic.fetch.Unlock(LockId); }
+
         void Update()
         {
+            LockEditor();
             if (!Show || EditorLogic.fetch == null || EditorLogic.fetch.ship == null) return;
             if (Time.time < nextDetect) return;
             nextDetect = Time.time + 1f;
