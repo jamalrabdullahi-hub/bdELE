@@ -39,6 +39,13 @@ namespace BDArmory.Avionics
         /// <summary>The HullCam currently being looked through, or null (normal flight camera).</summary>
         public static PartModule Current { get { Resolve(); return current?.GetValue(null) as PartModule; } }
         public static float FoV(PartModule cam) => camFoV != null ? (float)camFoV.GetValue(cam) : 60f;
+        public static void SetFoV(PartModule cam, float fov) { try { camFoV?.SetValue(cam, fov); } catch { } }
+        static FieldInfo camFoVMin;
+        public static void SetMinFoV(PartModule cam, float min)
+        {
+            camFoVMin ??= type?.GetField("cameraFoVMin", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            try { if (camFoVMin != null && (float)camFoVMin.GetValue(cam) > min) camFoVMin.SetValue(cam, min); } catch { }
+        }
 
         public static void Ray(PartModule cam, out Vector3 origin, out Vector3 fwd)
         {
@@ -66,6 +73,18 @@ namespace BDArmory.Avionics
         [KSPField(isPersistant = true, guiActive = true, guiActiveEditor = true, guiName = "EO/IR default mode", groupName = "eoir", groupDisplayName = "ELE EO/IR"),
          UI_ChooseOption(options = new[] { "EO", "WHOT", "BHOT", "IRON" }, scene = UI_Scene.All)]
         public string defaultMode = "WHOT";
+
+        [KSPField(isPersistant = true, guiActive = true, guiActiveEditor = true, guiName = "HUD", groupName = "eoir"),
+         UI_ChooseOption(options = new[] { "Minimal", "Ground", "SHORAD", "ISR", "Seeker" }, scene = UI_Scene.All)]
+        public string hudType = "Minimal";
+
+        [KSPField(isPersistant = true, guiActive = true, guiActiveEditor = true, guiName = "HUD colour", groupName = "eoir"),
+         UI_ChooseOption(options = new[] { "Green", "White", "Amber" }, scene = UI_Scene.All)]
+        public string hudColor = "Green";
+
+        [KSPField(isPersistant = true, guiActive = true, guiActiveEditor = true, guiName = "Pan limit", guiUnits = "°", groupName = "eoir"),
+         UI_FloatRange(minValue = 0f, maxValue = 180f, stepIncrement = 5f, scene = UI_Scene.All)]
+        public float panLimit = 60f;
 
         public int ModeIndex => Mathf.Max(0, System.Array.IndexOf(Modes, defaultMode));
 
@@ -108,6 +127,9 @@ namespace BDArmory.Avionics
             { pos = FlightGlobals.currentMainBody.GetWorldSurfacePosition(trackGeo.x, trackGeo.y, trackGeo.z); return true; }
             return false;
         }
+
+        public static Vessel TrackedVessel => trackVessel;
+        public static void TrackVessel(Vessel v) { if (v == null) return; trackVessel = v; trackGround = false; trackName = v.GetName(); }
 
         public static void ClearTrack() { trackVessel = null; trackGround = false; trackName = ""; }
 
@@ -249,6 +271,7 @@ namespace BDArmory.Avionics
             AvionicsDraw.ColorLabel(new Rect(x + 4, r.y + 6, r.xMax - x - 6, 16), $"FOV {cam.fieldOfView:F1}°", AvionicsDraw.LabelSmall, AvionicsDraw.HudText);
 
             if (Event.current.type != EventType.Repaint) return;
+            if (HullCamHUD.Draw(hc, cam, Mode)) return; // a HUD type is set for this camera
             Color hud = Mode == 2 ? new Color(0.1f, 0.1f, 0.1f) : new Color(0.85f, 1f, 0.85f);
             Vector2 c0 = new(Screen.width * 0.5f, Screen.height * 0.5f);
             if (!AvionicsDraw.Begin()) return;
