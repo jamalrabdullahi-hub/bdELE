@@ -272,6 +272,8 @@ namespace BDArmory.Avionics
                     if (heat > 0.05f) Glow(p.transform.position, 1.2f, Mathf.Clamp01(heat));
                 }
             }
+            foreach (var (hp, hi, hs) in Persistent.Heat)
+                if (!RadarUtils.TerrainCheck(camPos, hp + (Vector3)FlightGlobals.getUpAxis(hp) * 2f)) Glow(hp, hs, hi);
             GUI.color = old;
         }
     }

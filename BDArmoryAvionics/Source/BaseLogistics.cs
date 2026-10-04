@@ -101,18 +101,31 @@ namespace BDArmory.Avionics
         public static void Track(Vessel v, Base b, string craft) => launched[v.persistentId] = (b, craft);
         public static void Untrack(Vessel v) => launched.Remove(v.persistentId);
 
+        // KSP's GameEvents reject static methods (they need a target object), so the handlers are wrapped once.
+        sealed class Sink
+        {
+            public void Recovered(ProtoVessel pv, bool q) => OnRecovered(pv, q);
+            public void Destroyed(Vessel v) => OnDestroyed(v);
+            public void RecoveryRequested(Vessel v) => OnRecoveryRequested(v);
+        }
+        static readonly Sink sink = new();
+        static EventData<ProtoVessel, bool>.OnEvent dRecovered;
+        static EventData<Vessel>.OnEvent dDestroyed, dRecoveryRequested;
+
         public static void Subscribe()
         {
-            GameEvents.onVesselRecovered.Add(OnRecovered);
-            GameEvents.onVesselWillDestroy.Add(OnDestroyed);
-            GameEvents.OnVesselRecoveryRequested.Add(OnRecoveryRequested);
+            dRecovered ??= sink.Recovered; dDestroyed ??= sink.Destroyed; dRecoveryRequested ??= sink.RecoveryRequested;
+            GameEvents.onVesselRecovered.Remove(dRecovered); GameEvents.onVesselWillDestroy.Remove(dDestroyed); GameEvents.OnVesselRecoveryRequested.Remove(dRecoveryRequested);
+            GameEvents.onVesselRecovered.Add(dRecovered);
+            GameEvents.onVesselWillDestroy.Add(dDestroyed);
+            GameEvents.OnVesselRecoveryRequested.Add(dRecoveryRequested);
         }
 
         public static void Unsubscribe()
         {
-            GameEvents.onVesselRecovered.Remove(OnRecovered);
-            GameEvents.onVesselWillDestroy.Remove(OnDestroyed);
-            GameEvents.OnVesselRecoveryRequested.Remove(OnRecoveryRequested);
+            if (dRecovered != null) GameEvents.onVesselRecovered.Remove(dRecovered);
+            if (dDestroyed != null) GameEvents.onVesselWillDestroy.Remove(dDestroyed);
+            if (dRecoveryRequested != null) GameEvents.OnVesselRecoveryRequested.Remove(dRecoveryRequested);
             leaving = false;
         }
 
@@ -262,7 +275,10 @@ namespace BDArmory.Avionics
                     {
                         double ut = Planetarium.GetUniversalTime();
                         double hours = Mathf.Clamp(tnt / 10f, 0.5f, 6f) * 2.0; // 1 h per 5 kg, max 12 h per hit
-                        b.runwayClosedUntil = Math.Max(b.runwayClosedUntil, ut) + hours * 3600;
+                        // A bigger hit extends the closure; a salvo of small ones doesn't stack up for days.
+                        double until = ut + hours * 3600;
+                        if (until <= b.runwayClosedUntil) { UpdateStatus(b); continue; }
+                        b.runwayClosedUntil = until;
                         ScreenMessages.PostScreenMessage($"{Name(b)} runway cratered - closed {KSPUtil.PrintTimeCompact(b.runwayClosedUntil - ut, false)}", 4f, ScreenMessageStyle.UPPER_CENTER);
                         Debug.Log($"[BDArmoryAvionics]: {b.site} runway hit ({tnt:F1} kg), closed until UT {b.runwayClosedUntil:F0}");
                     }

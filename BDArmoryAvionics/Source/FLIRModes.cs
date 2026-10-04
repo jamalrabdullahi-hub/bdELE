@@ -134,7 +134,7 @@ namespace BDArmory.Avionics
         /// <summary>Draw heat glows over the camera image. Must be called inside the TGP window.</summary>
         public static void DrawHeatGlows(Rect imageRect)
         {
-            if (!Active || !AvionicsSettings.FLIRHeatGlow || sources.Count == 0 || Event.current.type != EventType.Repaint) return;
+            if (!Active || !AvionicsSettings.FLIRHeatGlow || (sources.Count == 0 && Persistent.Heat.Count == 0) || Event.current.type != EventType.Repaint) return;
             var tc = TargetingCamera.Instance;
             var cam = tc != null ? tc.NearCamera() : null;
             if (cam == null) return;
@@ -160,6 +160,15 @@ namespace BDArmory.Avionics
                 // Hot core
                 float rc = Mathf.Max(1.5f, r * 0.3f);
                 GUI.DrawTexture(new Rect(x - rc, y - rc, 2 * rc, 2 * rc), AvionicsDraw.GlowTexture, ScaleMode.StretchToFill, true);
+            }
+            foreach (var (hp, hi, hs) in Persistent.Heat)
+            {
+                Vector3 vp = cam.WorldToViewportPoint(hp);
+                if (vp.z <= 0 || vp.x < -0.05f || vp.x > 1.05f || vp.y < -0.05f || vp.y > 1.05f) continue;
+                float pxPerM = imageRect.height / (2 * vp.z * tanHalf);
+                float r = Mathf.Clamp(hs * pxPerM * (1 + hi), 3, imageRect.height * 0.25f);
+                GUI.color = new Color(baseColor.r, baseColor.g, baseColor.b, Mathf.Clamp01(0.3f + 0.7f * hi));
+                GUI.DrawTexture(new Rect(vp.x * imageRect.width - r, (1 - vp.y) * imageRect.height - r, 2 * r, 2 * r), AvionicsDraw.GlowTexture, ScaleMode.StretchToFill, true);
             }
             GUI.EndGroup();
             GUI.color = oldColor;

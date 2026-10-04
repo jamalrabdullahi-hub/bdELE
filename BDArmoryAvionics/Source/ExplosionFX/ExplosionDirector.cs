@@ -50,7 +50,40 @@ namespace BDArmory.Avionics
             shellMat = new Material(Shader.Find("KSP/Particles/Alpha Blended")) { mainTexture = AvionicsDraw.GlowTexture };
         }
 
-        void OnDestroy() { if (Instance == this) Instance = null; }
+        void OnDestroy() { if (Instance == this) Instance = null; Persistent.Clear(); }
+
+        /// <summary>Smoke (and fire, when there's no Destruction Effects flame) rising from a lingering fire.</summary>
+        public void FireSmoke(Vector3 local, float size, bool ownFlames)
+        {
+            if (smoke == null) return;
+            Vector3 up = FlightGlobals.getUpAxis(transform.TransformPoint(local));
+            Vector3 drift = Vector3.ProjectOnPlane(new Vector3(0.6f, 0, 0.8f), up).normalized * 3f;
+            Smoke(local + up * size * 0.5f, up, drift, size * 0.4f, 1f, 1, 18f, 4f, new Color(0.15f, 0.13f, 0.12f));
+            if (ownFlames) Fire(local, up, size * 0.3f, 0.6f, 2, 1.2f);
+        }
+
+        static float nextLog;
+        static void LogFx(ExplosionKind kind, float tnt, float k)
+        {
+            if (Time.time < nextLog) return;
+            nextLog = Time.time + 0.5f; // a salvo shouldn't flood the log
+            Debug.Log($"[BDArmoryAvionics]: explosion FX {kind}, {tnt:F1} kg, x{k:F2}");
+        }
+
+        /// <summary>Water impact from KSP's splash: a column and spray ring (bullets only at High quality).</summary>
+        public static void Splash(Vector3 pos, float size)
+        {
+            var d = Instance;
+            if (d == null || d.smoke == null || AvionicsSettings.ExplosionQuality == 0) return;
+            if (size < 8f && AvionicsSettings.ExplosionQuality < 3) return;
+            float R = Mathf.Clamp(Mathf.Sqrt(size) * 1.2f, 2f, 120f), q = Q, k = Mathf.Clamp(R / 10f, 0.4f, 6f);
+            Vector3 up = FlightGlobals.getUpAxis(pos);
+            Vector3 local = d.transform.InverseTransformPoint(pos);
+            d.Column(local, up, R, k, Mathf.Max(2, Mathf.RoundToInt(16 * q * k)), d.smoke, 3.5f, new Color(0.9f, 0.95f, 1f));
+            d.Ring(local, up, R * 0.8f, k, Mathf.Max(4, Mathf.RoundToInt(18 * q * Mathf.Sqrt(k))), new Color(0.95f, 0.97f, 1f));
+            if (size > 200f) d.Shake(pos, R, k * 0.5f);
+            LogFx(ExplosionKind.Water, size, k);
+        }
 
         // ---- Setup helpers ----
 
@@ -105,6 +138,7 @@ namespace BDArmory.Avionics
         {
             Vector3d off = BDKrakensbane.FloatingOriginOffset;
             if (off != Vector3d.zero) transform.position -= (Vector3)off;
+            Persistent.Tick();
             float now = Time.time;
             for (int i = liveLights.Count - 1; i >= 0; i--)
             {
@@ -166,6 +200,15 @@ namespace BDArmory.Avionics
             float k = ExplosionScaling.Factor(tnt), R = Shrapnel.BlastRadius(part, tnt), q = Q;
             Vector3 local = d.transform.InverseTransformPoint(pos);
             Vector3 drift = Vector3.ProjectOnPlane(new Vector3(0.6f, 0, 0.8f), up).normalized * 3f; // a light breeze
+            LogFx(kind, tnt, k);
+            // Marks that stay: scorch / crater where it touched the ground, and fires from big ground hits and fuel kills.
+            if (groundDist < R * 0.6f && kind != ExplosionKind.Water && kind != ExplosionKind.Small
+                && Physics.Raycast(pos + up * 1f, -up, out var gh, R + 2f, (int)LayerMasks.Scenery))
+            {
+                Persistent.AddScorch(gh.point, gh.normal, Mathf.Clamp(R * 0.35f, 1.5f, 80f), kind == ExplosionKind.Nuke ? 1800f : 300f);
+                if (kind == ExplosionKind.FuelKill || tnt >= 100f || kind == ExplosionKind.Thermobaric)
+                    Persistent.AddFire(gh.point, Mathf.Clamp(R * 0.25f, 2f, 30f), kind == ExplosionKind.FuelKill ? 90f : Mathf.Clamp(tnt / 5f, 30f, 120f));
+            }
             switch (kind)
             {
                 case ExplosionKind.AirBurst:
@@ -271,7 +314,7 @@ namespace BDArmory.Avionics
             }
         }
 
-        void Ring(Vector3 localGround, Vector3 up, float R, float k, int n, Color? tint = null)
+        internal void Ring(Vector3 localGround, Vector3 up, float R, float k, int n, Color? tint = null)
         {
             var ep = new ParticleSystem.EmitParams();
             Vector3 a = Vector3.Cross(up, Vector3.forward); if (a.sqrMagnitude < 0.01f) a = Vector3.Cross(up, Vector3.right);
@@ -290,7 +333,7 @@ namespace BDArmory.Avionics
             }
         }
 
-        void Column(Vector3 local, Vector3 up, float R, float k, int n, ParticleSystem ps, float life, Color? tint = null)
+        internal void Column(Vector3 local, Vector3 up, float R, float k, int n, ParticleSystem ps, float life, Color? tint = null)
         {
             var ep = new ParticleSystem.EmitParams();
             for (int i = 0; i < n; i++)
@@ -343,7 +386,7 @@ namespace BDArmory.Avionics
             shells.Add((s.t, s.m, Time.time, life, radius));
         }
 
-        void Shake(Vector3 pos, float R, float k)
+        internal void Shake(Vector3 pos, float R, float k)
         {
             var cam = FlightCamera.fetch != null ? FlightCamera.fetch.mainCamera : null;
             if (cam == null || !AvionicsSettings.ExplosionShake) return;

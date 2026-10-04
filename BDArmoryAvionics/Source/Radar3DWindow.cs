@@ -273,7 +273,7 @@ namespace BDArmory.Avionics
             if (!trails.TryGetValue(key, out var l) || l.Count < 2) return;
             int n = 0;
             for (int i = 0; i < l.Count; i++) trailPts[n++] = Project(ToLocal(l[i] + body - centre));
-            for (int i = 1; i < n; i++) AvionicsDraw.Line(trailPts[i - 1], trailPts[i], 1, new Color(col.r, col.g, col.b, col.a * i / n));
+            for (int i = 1; i < n; i++) CLine(trailPts[i - 1], trailPts[i], 1, new Color(col.r, col.g, col.b, col.a * i / n));
         }
 
         /// <summary>Selected missile's max range against the selected contact, as a dashed ring around own ship.</summary>
@@ -292,7 +292,7 @@ namespace BDArmory.Avionics
                 float t = i * Mathf.PI * 2 / 64;
                 ring[i] = Project(new Vector3(ownLocal.x + Mathf.Cos(t) * est.maxRange, 0, ownLocal.z + Mathf.Sin(t) * est.maxRange));
             }
-            for (int i = 0; i < 64; i += 2) AvionicsDraw.Line(ring[i], ring[i + 1], 1.5f, col);
+            for (int i = 0; i < 64; i += 2) CLine(ring[i], ring[i + 1], 1.5f, col);
         }
 
         /// <summary>BRAA of the selected contact from own ship: bearing, range, altitude, aspect.</summary>
@@ -330,6 +330,25 @@ namespace BDArmory.Avionics
                 }
         }
 
+        // Everything drawn on the scope is clipped to it (trails and prediction lines used to run out over the game view).
+        static Rect clip;
+        static bool Clip(ref Vector2 a, ref Vector2 b)
+        {
+            float t0 = 0, t1 = 1, dx = b.x - a.x, dy = b.y - a.y;
+            float[] p = { -dx, dx, -dy, dy }, q = { a.x - clip.xMin, clip.xMax - a.x, a.y - clip.yMin, clip.yMax - a.y };
+            for (int i = 0; i < 4; i++)
+            {
+                if (Mathf.Abs(p[i]) < 1e-6f) { if (q[i] < 0) return false; continue; }
+                float r = q[i] / p[i];
+                if (p[i] < 0) { if (r > t1) return false; if (r > t0) t0 = r; }
+                else { if (r < t0) return false; if (r < t1) t1 = r; }
+            }
+            Vector2 a0 = a; a = a0 + (b - a0) * t0; b = a0 + (b - a0) * t1;
+            return true;
+        }
+        static void CLine(Vector2 a, Vector2 b, float w, Color c) { if (Clip(ref a, ref b)) AvionicsDraw.Line(a, b, w, c); }
+        static void CDashed(Vector2 a, Vector2 b, float w, Color c, float dash = 4, float gap = 4) { if (Clip(ref a, ref b)) AvionicsDraw.DashedLine(a, b, w, c, dash, gap); }
+
         static Vector2 Project(Vector3 local)
         {
             float xr = local.x * cosY - local.z * sinY;
@@ -345,6 +364,7 @@ namespace BDArmory.Avionics
             if (Event.current.type != EventType.Repaint) return;
             picks.Clear();
 
+            clip = scope;
             if (!AvionicsDraw.Begin()) return;
             AvionicsDraw.FilledRect(scope, AvionicsDraw.ScopeBackground);
 
@@ -394,8 +414,8 @@ namespace BDArmory.Avionics
                 }
                 AvionicsDraw.Polyline(ring, 65, 1, r == 4 ? AvionicsDraw.Grid : AvionicsDraw.GridFaint, false);
             }
-            AvionicsDraw.Line(Project(new Vector3(-range, 0, 0)), Project(new Vector3(range, 0, 0)), 1, AvionicsDraw.GridFaint);
-            AvionicsDraw.Line(Project(new Vector3(0, 0, -range)), Project(new Vector3(0, 0, range)), 1, AvionicsDraw.GridFaint);
+            CLine(Project(new Vector3(-range, 0, 0)), Project(new Vector3(range, 0, 0)), 1, AvionicsDraw.GridFaint);
+            CLine(Project(new Vector3(0, 0, -range)), Project(new Vector3(0, 0, range)), 1, AvionicsDraw.GridFaint);
 
             // Own ship, pointing along its heading (at the centre, or where it is when centred on a contact)
             Vector3 ownLocal = ToLocal((Vector3)own.CoM - ownPos);
@@ -408,7 +428,7 @@ namespace BDArmory.Avionics
                 Vector2 c0 = Project(ownLocal), c1 = Project(ownLocal + headingLocal * range * 0.05f);
                 float angle = Vector2.SignedAngle(Vector2.down, c1 - c0);
                 if ((c1 - c0).sqrMagnitude < 0.5f) angle = 0;
-                if (cc != null) { AvionicsDraw.DashedLine(Project(new Vector3(ownLocal.x, 0, ownLocal.z)), c0, 1.5f, AvionicsDraw.HudText, 3, 3); picks.Add((c0, "own")); }
+                if (cc != null) { CDashed(Project(new Vector3(ownLocal.x, 0, ownLocal.z)), c0, 1.5f, AvionicsDraw.HudText, 3, 3); picks.Add((c0, "own")); }
                 AvionicsDraw.Triangle(c0, 7, angle, 2, AvionicsDraw.HudText);
             }
             DrawRmaxRing(own, ownLocal);
@@ -435,14 +455,14 @@ namespace BDArmory.Avionics
                 if (ShowPredict && !c.IsGPS && c.velocity.sqrMagnitude > 25 && (c.Key == selectedKey || c.radarLocked || c.isMissile || c.iff == IFF.Hostile))
                 {
                     Vector2 p30 = Project(local + ToLocal(c.velocity * 30f));
-                    AvionicsDraw.DashedLine(head, p30, 1, new Color(col.r, col.g, col.b, 0.7f), 2, 4);
+                    CDashed(head, p30, 1, new Color(col.r, col.g, col.b, 0.7f), 2, 4);
                     AvionicsDraw.Circle(p30, 2.5f, 1, col, 8);
                 }
                 if (c.Key == centerKey) AvionicsDraw.Circle(head, 20, 1, AvionicsDraw.HudText, 4);
 
                 // Stalk: solid above, dashed below
-                if (local.y >= 0) AvionicsDraw.Line(basePt, head, 1.5f, col);
-                else AvionicsDraw.DashedLine(basePt, head, 1.5f, col, 3, 3);
+                if (local.y >= 0) CLine(basePt, head, 1.5f, col);
+                else CDashed(basePt, head, 1.5f, col, 3, 3);
                 AvionicsDraw.Circle(basePt, 2, 1, col, 8);
 
                 // Heading line
@@ -454,12 +474,12 @@ namespace BDArmory.Avionics
                     if (dir.sqrMagnitude > 0.01f)
                     {
                         float len = Mathf.Lerp(8, 26, Mathf.Clamp01(c.velocity.magnitude / 700f));
-                        AvionicsDraw.Line(head, head + dir.normalized * len, 1.5f, col);
+                        CLine(head, head + dir.normalized * len, 1.5f, col);
                     }
                 }
 
                 // Symbol
-                if (c.IsGPS) { AvionicsDraw.Line(head + new Vector2(-4, 0), head + new Vector2(4, 0), 1.5f, col); AvionicsDraw.Line(head + new Vector2(0, -4), head + new Vector2(0, 4), 1.5f, col); }
+                if (c.IsGPS) { CLine(head + new Vector2(-4, 0), head + new Vector2(4, 0), 1.5f, col); CLine(head + new Vector2(0, -4), head + new Vector2(0, 4), 1.5f, col); }
                 else if (c.isMissile) AvionicsDraw.Triangle(head, 6, 0, 2, col);
                 else if (c.iff == IFF.Hostile) AvionicsDraw.Diamond(head, 6, 2, col);
                 else if (c.iff == IFF.Friendly) AvionicsDraw.Circle(head, 5, 2, col, 16);
@@ -495,9 +515,9 @@ namespace BDArmory.Avionics
                     Vector2 head = Project(local);
                     head.x = Mathf.Clamp(head.x, scope.xMin + 4, scope.xMax - 4);
                     head.y = Mathf.Clamp(head.y, scope.yMin + 4, scope.yMax - 4);
-                    AvionicsDraw.DashedLine(basePt, head, 1, dc, 2, 3);
-                    AvionicsDraw.Line(head + new Vector2(-3, -3), head + new Vector2(3, 3), 1.5f, dc);
-                    AvionicsDraw.Line(head + new Vector2(-3, 3), head + new Vector2(3, -3), 1.5f, dc);
+                    CDashed(basePt, head, 1, dc, 2, 3);
+                    CLine(head + new Vector2(-3, -3), head + new Vector2(3, 3), 1.5f, dc);
+                    CLine(head + new Vector2(-3, 3), head + new Vector2(3, -3), 1.5f, dc);
                     if (age < DebrisBurstTime) // expanding burst ring when it first appears
                     {
                         float k = age / DebrisBurstTime;
@@ -507,7 +527,7 @@ namespace BDArmory.Avionics
                     if (vel.sqrMagnitude > 25)
                     {
                         Vector2 vEnd = Project(local + ToLocal(vel).normalized * range * 0.02f);
-                        if ((vEnd - head).sqrMagnitude > 0.01f) AvionicsDraw.Line(head, head + (vEnd - head).normalized * 10f, 1, dc);
+                        if ((vEnd - head).sqrMagnitude > 0.01f) CLine(head, head + (vEnd - head).normalized * 10f, 1, dc);
                     }
                     debrisLabels.Add((head, v, (wpos - ownPos).magnitude));
                 }
@@ -543,9 +563,9 @@ namespace BDArmory.Avionics
                     Vector3 ml = ToLocal(meet - ownPos);
                     Vector2 mp = Project(ml);
                     Color ic = new(0.4f, 0.9f, 1f, 0.9f);
-                    AvionicsDraw.DashedLine(Project(ToLocal((Vector3)own.CoM - ownPos)), mp, 1, ic, 5, 4);
-                    AvionicsDraw.Line(mp + new Vector2(-5, -5), mp + new Vector2(5, 5), 2, ic);
-                    AvionicsDraw.Line(mp + new Vector2(-5, 5), mp + new Vector2(5, -5), 2, ic);
+                    CDashed(Project(ToLocal((Vector3)own.CoM - ownPos)), mp, 1, ic, 5, 4);
+                    CLine(mp + new Vector2(-5, -5), mp + new Vector2(5, 5), 2, ic);
+                    CLine(mp + new Vector2(-5, 5), mp + new Vector2(5, -5), 2, ic);
                     Vector3 hdg = Vector3.ProjectOnPlane(meet - (Vector3)own.CoM, (Vector3)own.upAxis);
                     float brg = Mathf.Repeat(Vector3.SignedAngle(VectorUtils.GetNorthVector(own.CoM, own.mainBody), hdg, (Vector3)own.upAxis), 360);
                     interceptText = $"INTERCEPT  steer {brg:000}°  merge {ti:0}s  {AvionicsDraw.FormatRange((meet - (Vector3)own.CoM).magnitude)}";
@@ -565,9 +585,9 @@ namespace BDArmory.Avionics
                     Vector2 outer = Project(new Vector3(d.x * range * 1.08f, 0, d.y * range * 1.08f));
                     Vector2 inner = Project(new Vector3(d.x * range * 0.9f, 0, d.y * range * 0.9f));
                     bool blink = (t.isMissile || t.type == RadarWarningReceiver.RWRThreatTypes.MissileLaunch) && Mathf.Repeat(Time.time, 0.4f) < 0.2f;
-                    AvionicsDraw.Line(inner, outer, blink ? 4 : 2.5f, t.Color);
+                    CLine(inner, outer, blink ? 4 : 2.5f, t.Color);
                     if (t.isMissile && flat.magnitude <= range)
-                        AvionicsDraw.DashedLine(Project(local), Project(Vector3.zero), 1.5f, AvionicsDraw.Missile, 4, 3);
+                        CDashed(Project(local), Project(Vector3.zero), 1.5f, AvionicsDraw.Missile, 4, 3);
                     threatLabels.Add((outer, t));
                 }
             AvionicsDraw.End();
