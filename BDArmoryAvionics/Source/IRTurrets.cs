@@ -53,6 +53,7 @@ namespace BDArmory.Avionics
         static Type servoType;
         static PropertyInfo position, minPos, maxPos, isRotational, isLocked, isFreeMoving, defaultSpeed, maxSpeed, defaultPosition;
         static MethodInfo moveTo, getAxis;
+        static FieldInfo axisField;
 
         public static bool Available { get { Resolve(); return servoType != null; } }
 
@@ -79,6 +80,7 @@ namespace BDArmory.Avionics
                     defaultPosition = iservo.GetProperty("DefaultPosition");
                     moveTo = iservo.GetMethod("MoveTo", new[] { typeof(float), typeof(float) });
                     getAxis = servoType.GetMethod("GetAxis", Type.EmptyTypes);
+                    axisField = servoType.GetField("axis", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                     break;
                 }
             }
@@ -102,7 +104,12 @@ namespace BDArmory.Avionics
         /// <summary>The servo's rotation axis in world space.</summary>
         public static Vector3 WorldAxis(PartModule s)
         {
-            var local = getAxis != null ? (Vector3)getAxis.Invoke(s, null) : Vector3.up;
+            // GetAxis needs the servo's physics joint, which doesn't exist in the editor (it throws there): use the configured axis.
+            Vector3 local = Vector3.zero;
+            if (HighLogic.LoadedSceneIsFlight && getAxis != null)
+                try { local = (Vector3)getAxis.Invoke(s, null); } catch { }
+            if (local == Vector3.zero && axisField != null) local = (Vector3)axisField.GetValue(s);
+            if (local == Vector3.zero) local = Vector3.up;
             return s.part.transform.TransformDirection(local).normalized;
         }
     }

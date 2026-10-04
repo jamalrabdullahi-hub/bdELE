@@ -39,11 +39,36 @@ namespace BDArmory.Avionics
             if (sel >= defs.Count) sel = 0;
         }
 
+        string error;
+
         void OnGUI()
         {
             if (!Show) return;
-            rect = AvionicsCore.DrawWindow(WindowID, rect, Draw, "IR turret tool", BDArmorySetup.BDGuiSkin);
-            if (Event.current.type == EventType.Repaint && sel < defs.Count) Draw3D(defs[sel]);
+            rect = AvionicsCore.DrawWindow(WindowID, rect, SafeDraw, "IR turret tool", BDArmorySetup.BDGuiSkin);
+            if (Event.current.type == EventType.Repaint && sel < defs.Count && error == null)
+                try { Draw3D(defs[sel]); } catch (System.Exception e) { Fail(e); }
+        }
+
+        /// <summary>Never let an exception repeat every frame (that's what froze the editor): log once, show it, stop the preview.</summary>
+        void SafeDraw(int id)
+        {
+            if (error != null)
+            {
+                if (GUI.Button(new Rect(rect.width - 20, 2, 18, 18), " X", BDArmorySetup.CloseButtonStyle)) { Show = false; error = null; return; }
+                AvionicsDraw.ColorLabel(new Rect(8, 24, rect.width - 16, 60), "The turret tool hit an error (details in KSP.log):
+" + error, AvionicsDraw.LabelSmall, AvionicsDraw.Hostile);
+                if (GUI.Button(new Rect(8, 90, 100, 20), "Retry", BDArmorySetup.ButtonStyle)) error = null;
+                GUI.DragWindow(); return;
+            }
+            try { Draw(id); }
+            catch (System.Exception e) { Fail(e); try { GUI.EndScrollView(); } catch { } }
+        }
+
+        void Fail(System.Exception e)
+        {
+            if (e is ExitGUIException) throw e;
+            error = e.InnerException?.Message ?? e.Message;
+            Debug.LogError($"[BDArmoryAvionics]: IR turret tool: {e}");
         }
 
         // ---- Settings helpers (copied to symmetry counterparts) ----
