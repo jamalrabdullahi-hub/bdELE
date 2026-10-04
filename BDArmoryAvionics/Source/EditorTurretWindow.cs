@@ -55,8 +55,7 @@ namespace BDArmory.Avionics
             if (error != null)
             {
                 if (GUI.Button(new Rect(rect.width - 20, 2, 18, 18), " X", BDArmorySetup.CloseButtonStyle)) { Show = false; error = null; return; }
-                AvionicsDraw.ColorLabel(new Rect(8, 24, rect.width - 16, 60), "The turret tool hit an error (details in KSP.log):
-" + error, AvionicsDraw.LabelSmall, AvionicsDraw.Hostile);
+                AvionicsDraw.ColorLabel(new Rect(8, 24, rect.width - 16, 60), "The turret tool hit an error (details in KSP.log):\n" + error, AvionicsDraw.LabelSmall, AvionicsDraw.Hostile);
                 if (GUI.Button(new Rect(8, 90, 100, 20), "Retry", BDArmorySetup.ButtonStyle)) error = null;
                 GUI.DragWindow(); return;
             }
