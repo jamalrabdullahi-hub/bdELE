@@ -101,6 +101,8 @@ namespace BDArmory.Avionics
         public static bool ShowLM = false;
         public static bool MissileDLZ = true;
         public static bool ShowFeeds = false;
+        public static int ExplosionQuality = 1;         // 0 off, 1 low, 2 medium, 3 high (extra explosion layers)
+        public static bool ExplosionShake = true;
         public static bool ExplosionScale = true;       // fireballs sized by warhead (cube root of TNT, 20 kg = 1x)
         public static float ExplosionSizeCurve = 1f, ExplosionSizeCap = 6f;
         public static bool Shrapnel = true;             // fragments on every explosion, out to ShrapnelRangeMult x the blast radius
@@ -201,6 +203,8 @@ namespace BDArmory.Avionics
                 AutoFeeds = GetBool(node, "AutoFeeds", AutoFeeds);
                 Shrapnel = GetBool(node, "Shrapnel", Shrapnel);
                 ExplosionScale = GetBool(node, "ExplosionScale", ExplosionScale);
+                ExplosionQuality = Mathf.Clamp(GetInt(node, "ExplosionQuality", ExplosionQuality), 0, 3);
+                ExplosionShake = GetBool(node, "ExplosionShake", ExplosionShake);
                 ExplosionSizeCurve = Mathf.Clamp(GetFloat(node, "ExplosionSizeCurve", ExplosionSizeCurve), 0.3f, 3f);
                 ExplosionSizeCap = Mathf.Clamp(GetFloat(node, "ExplosionSizeCap", ExplosionSizeCap), 1f, 12f);
                 ShrapnelRangeMult = Mathf.Clamp(GetFloat(node, "ShrapnelRangeMult", ShrapnelRangeMult), 1f, 4f);
@@ -294,6 +298,8 @@ namespace BDArmory.Avionics
                 node.AddValue("AutoFeeds", AutoFeeds);
                 node.AddValue("Shrapnel", Shrapnel);
                 node.AddValue("ExplosionScale", ExplosionScale);
+                node.AddValue("ExplosionQuality", ExplosionQuality);
+                node.AddValue("ExplosionShake", ExplosionShake);
                 node.AddValue("ExplosionSizeCurve", ExplosionSizeCurve);
                 node.AddValue("ExplosionSizeCap", ExplosionSizeCap);
                 node.AddValue("ShrapnelRangeMult", ShrapnelRangeMult);

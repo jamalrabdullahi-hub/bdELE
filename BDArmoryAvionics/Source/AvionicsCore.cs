@@ -209,7 +209,8 @@ namespace BDArmory.Avionics
             AvionicsSettings.Shrapnel = GUI.Toggle(new Rect(8, y, hw, 20), AvionicsSettings.Shrapnel, AvionicsSettings.Shrapnel ? $"Shrapnel ×{AvionicsSettings.ShrapnelRangeMult:0.#}" : "Shrapnel off", AvionicsSettings.Shrapnel ? sel : btn);
             if (GUI.Button(new Rect(12 + hw, y, hw, 20), Shrapnel.Patterns[AvionicsSettings.ShrapnelPattern], btn)) AvionicsSettings.ShrapnelPattern = (AvionicsSettings.ShrapnelPattern + 1) % Shrapnel.Patterns.Length;
             y += 22;
-            AvionicsSettings.ExplosionScale = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.ExplosionScale, AvionicsSettings.ExplosionScale ? "Fireballs sized by warhead" : "Fireballs: BDArmory default size", AvionicsSettings.ExplosionScale ? sel : btn);
+            AvionicsSettings.ExplosionScale = GUI.Toggle(new Rect(8, y, hw, 20), AvionicsSettings.ExplosionScale, AvionicsSettings.ExplosionScale ? "Sized fireballs" : "BDA fireballs", AvionicsSettings.ExplosionScale ? sel : btn);
+            if (GUI.Button(new Rect(12 + hw, y, hw, 20), $"Blast FX: {ExplosionDirector.QualityNames[AvionicsSettings.ExplosionQuality]}", AvionicsSettings.ExplosionQuality > 0 ? sel : btn)) AvionicsSettings.ExplosionQuality = (AvionicsSettings.ExplosionQuality + 1) % 4;
             y += 24;
             var net = DataLinkNetwork.PlayerNetwork;
             var iads = net != null ? IADSController.For(net.team) : null;
