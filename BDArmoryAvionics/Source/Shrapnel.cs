@@ -25,7 +25,7 @@ namespace BDArmory.Avionics
 
         // .50 cal (12.7 mm) fragment
         const float FragMass = 0.046f, Caliber = 12.7f, FragSpeed = 900f;
-        const int RayBudgetPerFrame = 5000, MaxHoles = 100, MaxStreaks = 70;
+        const int RayBudgetPerFrame = 2500, MaxHoles = 60, MaxStreaks = 40; // kept low so salvos stay smooth
         static int frame = -1, raysThisFrame;
 
         public static float BlastRadius(Part explosive, float tnt)
@@ -40,7 +40,7 @@ namespace BDArmory.Avionics
         {
             if (!AvionicsSettings.Shrapnel || tnt <= 0.001f) return;
             if (Time.frameCount != frame) { frame = Time.frameCount; raysThisFrame = 0; }
-            int n = tnt >= 1f ? Mathf.Clamp(Mathf.RoundToInt(200 + 80 * tnt), 200, 1000) : Mathf.Clamp(Mathf.RoundToInt(20 + 180 * tnt), 10, 200);
+            int n = tnt >= 1f ? Mathf.Clamp(Mathf.RoundToInt(200 + 40 * tnt), 200, 600) : Mathf.Clamp(Mathf.RoundToInt(20 + 180 * tnt), 10, 200);
             n = Mathf.Min(n, RayBudgetPerFrame - raysThisFrame);
             if (n <= 0) return;
             raysThisFrame += n;
