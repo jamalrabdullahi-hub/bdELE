@@ -22,7 +22,7 @@ namespace BDArmory.Avionics
         static Material multiply2x, add, invert, tint;
         static bool materialsFailed = false;
 
-        static Material Make(BlendMode src, BlendMode dst)
+        public static Material Make(BlendMode src, BlendMode dst)
         {
             var shader = Shader.Find("Hidden/Internal-Colored");
             if (shader == null) return null;
