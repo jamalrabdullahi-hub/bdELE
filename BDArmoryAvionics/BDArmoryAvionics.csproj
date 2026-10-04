@@ -27,7 +27,7 @@
     <Reference Include="UnityEngine.TextRenderingModule"><HintPath>$(KSPRefs)\UnityEngine.TextRenderingModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.ImageConversionModule"><HintPath>$(KSPRefs)\UnityEngine.ImageConversionModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.ParticleSystemModule"><HintPath>$(KSPRefs)\UnityEngine.ParticleSystemModule.dll</HintPath><Private>false</Private></Reference>
-    <Reference Include="UnityEngine.AssetBundleModule"><HintPath>$(KSPRefs)NITYENGINE.ASSETBUNDLEMODULE.DLL</HINTPATH><PRIVATE>FALSE</PRIVATE></REFERENCE>
+    <Reference Include="UnityEngine.AssetBundleModule"><HintPath>$(KSPRefs)\UnityEngine.AssetBundleModule.dll</HintPath><Private>false</Private></Reference>
     <REFERENCE INCLUDE="UNITYENGINE.UI"><HintPath>$(KSPRefs)\UnityEngine.UI.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.UIModule"><HintPath>$(KSPRefs)\UnityEngine.UIModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.AnimationModule"><HintPath>$(KSPRefs)\UnityEngine.AnimationModule.dll</HintPath><Private>false</Private></Reference>
