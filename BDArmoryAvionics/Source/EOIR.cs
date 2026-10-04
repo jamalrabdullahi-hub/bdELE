@@ -39,6 +39,16 @@ namespace BDArmory.Avionics
         /// <summary>The HullCam currently being looked through, or null (normal flight camera).</summary>
         public static PartModule Current { get { Resolve(); return current?.GetValue(null) as PartModule; } }
         public static float FoV(PartModule cam) => camFoV != null ? (float)camFoV.GetValue(cam) : 60f;
+        static FieldInfo camUp;
+        /// <summary>HullCam's own camera orientation in its transform: it sets exactly this every physics frame.</summary>
+        public static Quaternion BaseRotation(PartModule cam)
+        {
+            camUp ??= type?.GetField("cameraUp", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            Vector3 f = camForward != null ? (Vector3)camForward.GetValue(cam) : Vector3.forward;
+            Vector3 u = camUp != null ? (Vector3)camUp.GetValue(cam) : Vector3.up;
+            if (f == Vector3.zero) f = Vector3.forward; if (u == Vector3.zero || Vector3.Cross(f, u) == Vector3.zero) u = Vector3.up;
+            return Quaternion.LookRotation(f, u);
+        }
         public static void SetFoV(PartModule cam, float fov) { try { camFoV?.SetValue(cam, fov); } catch { } }
         static FieldInfo camFoVMin;
         public static void SetMinFoV(PartModule cam, float min)

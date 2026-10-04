@@ -24,8 +24,6 @@ namespace BDArmory.Avionics
         public static bool Slave = true;     // camera follows the track
         public static bool Lase;             // targeting pod slaved to the track
         static PartModule cam;
-        static Quaternion baseLocal, lastSetLocal;
-        static int settleFrames;
         static float holdT;
         static float nextLase;
         const float MinFov = 40f / 120f;     // 120x
@@ -41,11 +39,10 @@ namespace BDArmory.Avionics
             var fc = FlightCamera.fetch;
             if (hc == null || fc == null) { cam = null; Lase = false; return; }
             var t = fc.transform;
-            if (hc != cam) { cam = hc; Yaw = Pitch = 0; settleFrames = 3; HullCam.SetMinFoV(hc, MinFov); }
-            // Base = HullCam's own placement. Let it settle after a switch; re-read it whenever HullCam re-places the camera.
-            if (settleFrames > 0) { settleFrames--; baseLocal = t.localRotation; lastSetLocal = t.localRotation; return; }
-            if (Quaternion.Angle(t.localRotation, lastSetLocal) > 0.01f) baseLocal = t.localRotation;
-
+            if (hc != cam) { cam = hc; Yaw = Pitch = 0; HullCam.SetMinFoV(hc, MinFov); }
+            // HullCam re-parents the flight camera to the camera part and sets exactly this rotation every physics frame,
+            // so the base view is known; the pan is applied on top after it, every frame.
+            Quaternion baseLocal = HullCam.BaseRotation(hc);
             var s = Settings;
             float limit = s != null ? s.panLimit : 60f;
             if (GUIUtility.keyboardControl == 0)
@@ -53,7 +50,6 @@ namespace BDArmory.Avionics
                 bool ctrl = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
                 bool any = ctrl && (Input.GetKey(KeyCode.LeftArrow) || Input.GetKey(KeyCode.RightArrow) || Input.GetKey(KeyCode.UpArrow) || Input.GetKey(KeyCode.DownArrow));
                 holdT = any ? holdT + Time.unscaledDeltaTime : 0f;
-                // fast: 90 deg/s wide, doubling after half a second held; finer when zoomed in
                 float rate = 90f * Mathf.Clamp(HullCam.FoV(hc) / 40f, 0.08f, 1f) * (holdT > 0.5f ? 2f : 1f) * Time.unscaledDeltaTime;
                 if (ctrl)
                 {
@@ -65,24 +61,17 @@ namespace BDArmory.Avionics
                 }
                 if (Input.GetKeyDown(KeyCode.Tab)) NextTarget();
                 if (Input.GetKeyDown(KeyCode.L)) { Lase = !Lase; ScreenMessages.PostScreenMessage(Lase ? "FCS: LASER ON (pod slaved to track)" : "FCS: laser off", 1.5f, ScreenMessageStyle.UPPER_CENTER); }
-                float wheel = Input.GetAxis("Mouse ScrollWheel");
-                if (Mathf.Abs(wheel) > 0.001f && !AvionicsCore.MouseOverAnyWindow())
-                    HullCam.SetFoV(hc, Mathf.Clamp(HullCam.FoV(hc) * (wheel > 0 ? 0.8f : 1.25f), MinFov, 90f));
+                // zoom: HullCam's own (mouse wheel / zoom keys), now allowed down to 120x
             }
             Quaternion camLocal = CamLocal(fc);
-            // Slaved: point at the track, measured in the camera's own frame
-            if (Slave && EOIRView.TryTrack(out var tp, out _))
+            if (Slave && EOIRView.TryTrack(out var tp, out _) && t.parent != null)
             {
-                var parentRot = t.parent != null ? t.parent.rotation : Quaternion.identity;
-                Vector3 dir = Quaternion.Inverse(parentRot * baseLocal * camLocal) * (tp - fc.mainCamera.transform.position).normalized;
+                Vector3 dir = Quaternion.Inverse(t.parent.rotation * baseLocal * camLocal) * (tp - fc.mainCamera.transform.position).normalized;
                 Yaw = Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
                 Pitch = Mathf.Asin(Mathf.Clamp(dir.y, -1, 1)) * Mathf.Rad2Deg;
             }
             Yaw = Mathf.Clamp(Yaw, -limit, limit); Pitch = Mathf.Clamp(Pitch, -limit, limit);
-            // rotate about the camera's own axes
             t.localRotation = baseLocal * camLocal * Quaternion.Euler(-Pitch, Yaw, 0) * Quaternion.Inverse(camLocal);
-            lastSetLocal = t.localRotation;
-            if (fc.mainCamera != null) fc.mainCamera.fieldOfView = HullCam.FoV(hc);
             if (Lase) SlavePod(hc.vessel);
         }
 
@@ -240,7 +229,7 @@ namespace BDArmory.Avionics
             if (type == "Ground" || type == "Seeker")
                 Label(new Rect(20, 140, 400, 16), $"OWN SPD {v.srfSpeed * 3.6:F0} km/h  ALT {v.radarAltitude:F0} m", c);
 
-            Label(new Rect(20, Screen.height - 60, 900, 16), "Ctrl+arrows pan · Ctrl+Home centre · wheel zoom · Tab next target · L laser · click to track", A(c, 0.6f));
+            Label(new Rect(20, Screen.height - 60, 900, 16), "Ctrl+arrows pan · Ctrl+Home centre · wheel zoom (to 120x) · Tab next target · L laser · click to track", A(c, 0.6f));
             return true;
         }
 
