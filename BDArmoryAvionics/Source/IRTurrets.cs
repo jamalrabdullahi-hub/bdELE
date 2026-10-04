@@ -28,6 +28,8 @@ namespace BDArmory.Avionics
 
         // Logic settings, edited in the SPH/VAB turret tool. Per servo:
         [KSPField(isPersistant = true)] public int direction = 0;            // 0 auto (probe in flight), 1 = +, -1 = -
+        [KSPField(isPersistant = true)] public string axis = "Auto";         // rotation axis in the part's frame: Auto (from IR), X, Y, Z, -X, -Y, -Z
+        public static readonly string[] AxisOptions = { "Auto", "X", "Y", "Z", "-X", "-Y", "-Z" };
         // Per turret (kept on its base servo):
         [KSPField(isPersistant = true)] public string priority = TurretLogic.DefaultPriority; // order; "-" prefix = disabled
         [KSPField(isPersistant = true)] public string aimWith = "Auto";       // Auto, Gun, Launcher, Camera
@@ -102,6 +104,17 @@ namespace BDArmory.Avionics
         public static void MoveTo(PartModule s, float pos, float speed) => moveTo.Invoke(s, new object[] { pos, speed });
 
         /// <summary>The servo's rotation axis in world space.</summary>
+        public static Vector3 WorldAxis(PartModule s, ModuleIRTurret m)
+        {
+            if (m != null && m.axis != "Auto")
+            {
+                Vector3 l = m.axis.EndsWith("X") ? Vector3.right : m.axis.EndsWith("Y") ? Vector3.up : Vector3.forward;
+                if (m.axis.StartsWith("-")) l = -l;
+                return s.part.transform.TransformDirection(l).normalized;
+            }
+            return WorldAxis(s);
+        }
+
         public static Vector3 WorldAxis(PartModule s)
         {
             // GetAxis needs the servo's physics joint, which doesn't exist in the editor (it throws there): use the configured axis.
@@ -298,7 +311,7 @@ namespace BDArmory.Avionics
             foreach (var j in t.joints)
             {
                 if (IRServo.Locked(j.servo) || IRServo.FreeMoving(j.servo)) { j.module.status = "servo locked"; continue; }
-                Vector3 axis = IRServo.WorldAxis(j.servo);
+                Vector3 axis = IRServo.WorldAxis(j.servo, j.module);
                 float pos = IRServo.Position(j.servo);
                 float phase = Phase(j, f, axis);
                 if (!j.calibrated) { Probe(j, pos, phase); j.module.status = $"{t.Kind}: checking servo direction"; continue; }

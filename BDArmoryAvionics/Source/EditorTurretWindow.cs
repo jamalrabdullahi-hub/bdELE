@@ -119,13 +119,19 @@ namespace BDArmory.Avionics
             {
                 float min = 0, max = 0, pos = 0;
                 try { min = IRServo.Min(servo); max = IRServo.Max(servo); pos = IRServo.Position(servo); } catch { }
-                AvionicsDraw.ColorLabel(new Rect(0, y + 3, w - 150, 16), $"{part.partInfo.title}  [{min:F0}..{max:F0}] at {pos:F0}", small, AvionicsDraw.HudText);
+                AvionicsDraw.ColorLabel(new Rect(0, y + 3, w - 222, 16), $"{part.partInfo.title}  [{min:F0}..{max:F0}] at {pos:F0}", small, AvionicsDraw.HudText);
+                if (GUI.Button(new Rect(w - 218, y, 68, 20), $"Axis: {module.axis}", module.axis != "Auto" ? on : btn))
+                {
+                    int ai = System.Array.IndexOf(ModuleIRTurret.AxisOptions, module.axis);
+                    string next = ModuleIRTurret.AxisOptions[(ai + 1) % ModuleIRTurret.AxisOptions.Length];
+                    ForSym(module, m => m.axis = next); coverage = null;
+                }
                 string dirName = module.direction == 0 ? "Dir: auto" : module.direction > 0 ? "Dir: +" : "Dir: -";
                 if (GUI.Button(new Rect(w - 146, y, 72, 20), dirName, module.direction != 0 ? on : btn)) ForSym(module, m => m.direction = m.direction == 0 ? 1 : m.direction == 1 ? -1 : 0);
                 if (GUI.Button(new Rect(w - 72, y, 72, 20), "Exclude", btn)) { ForSym(module, m => m.aiming = false); nextDetect = 0; }
                 y += 22;
             }
-            AvionicsDraw.ColorLabel(new Rect(0, y, w, 28), "Dir auto: tested in flight with a 6° nudge. Set + or - to skip the test\n(if the preview below turns the wrong way, flip it).", small, AvionicsDraw.ScopeText); y += 32;
+            AvionicsDraw.ColorLabel(new Rect(0, y, w, 28), "Axis = the yellow spin line. Auto reads it from IR; if it is wrong, click to pick X/Y/Z.\nDir +/- flips which way the servo turns.", small, AvionicsDraw.ScopeText); y += 32;
 
             // Priority
             Head(ref y, w, "AIM AT (first available wins)");
@@ -207,7 +213,7 @@ namespace BDArmory.Avionics
             for (int i = 0; i < n; i++)
             {
                 var (part, servo, module) = t.chain[i];
-                piv[i] = part.transform.position; ax[i] = IRServo.WorldAxis(servo);
+                piv[i] = part.transform.position; ax[i] = IRServo.WorldAxis(servo, module);
                 sign[i] = module.direction == 0 ? 1 : module.direction;
                 try { pos0[i] = IRServo.Position(servo); lo[i] = IRServo.Min(servo); hi[i] = IRServo.Max(servo); } catch { lo[i] = -180; hi[i] = 180; }
                 if (hi[i] - lo[i] >= 359f || hi[i] <= lo[i]) { lo[i] = float.NegativeInfinity; hi[i] = float.PositiveInfinity; }
@@ -291,9 +297,9 @@ namespace BDArmory.Avionics
             if (cam == null || !AvionicsDraw.Begin()) return;
             bool S(Vector3 wp, out Vector2 p) { var s = cam.WorldToScreenPoint(wp); p = new Vector2(s.x, Screen.height - s.y); return s.z > 0; }
             void L(Vector3 a, Vector3 b, float wdt, Color c) { if (S(a, out var pa) && S(b, out var pb)) AvionicsDraw.Line(pa, pb, wdt, c); }
-            foreach (var (part, servo, _) in t.chain)
+            foreach (var (part, servo, module) in t.chain)
             {
-                Vector3 p = part.transform.position, a = IRServo.WorldAxis(servo);
+                Vector3 p = part.transform.position, a = IRServo.WorldAxis(servo, module);
                 L(p - a * 1.2f, p + a * 1.2f, 3, new Color(1f, 0.85f, 0.2f));
             }
             L(pvOrigin, pvOrigin + pvFwd * 12f, 2, Color.cyan);
