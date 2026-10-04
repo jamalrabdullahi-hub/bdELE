@@ -47,6 +47,17 @@ namespace BDArmory.Avionics
         [KSPField(isPersistant = true)] public float deadband = 0.15f;        // degrees
         [KSPField(isPersistant = true)] public bool restWhenIdle = true;
         [KSPField(isPersistant = true)] public float maxRangeKm = 0f;         // 0 = no limit
+        // Gantry (deploy) servos: lifts, arms, doors that move the turret out before it aims and put it away after.
+        // Per servo (linear servos on the mount count as gantry automatically):
+        [KSPField(isPersistant = true)] public bool gantry = false;
+        [KSPField(isPersistant = true)] public float gStowed = 0f, gDeployed = 0f, gDelay = 0f;
+        // Per turret (base servo):
+        [KSPField(isPersistant = true)] public bool gantryOn = true;
+        [KSPField(isPersistant = true)] public float deployHold = 0.5f;   // after the gantry is out, before aiming
+        [KSPField(isPersistant = true)] public float stowAfter = 10f;     // no target this long -> park and stow
+        // runtime (not saved): 0 stowed, 1 deploying, 2 ready, 3 parking, 4 stowing
+        public int gState; public float gT0 = -1, gLastTarget = -1;
+        public static readonly string[] GStateNames = { "stowed", "deploying", "ready", "parking", "stowing" };
         // Missiles / SAMs on the turret: point ahead of the target and pitch up for range.
         [KSPField(isPersistant = true)] public float loftAngle = -1f;         // degrees above the line of sight at long range; -1 = the missile's own loft (AAMLoft) else 15
         [KSPField(isPersistant = true)] public float loftFullKm = 8f;         // full loft from this range (none inside 1.5 km)
@@ -239,6 +250,7 @@ namespace BDArmory.Avionics
             public Part aimPart;
             public int kind; // 0 gun, 1 launcher, 2 camera
             public readonly List<(Part part, int kind)> options = new(); // every aimable part on this chain
+            public readonly List<(Part part, PartModule servo, ModuleIRTurret module)> gantry = new(); // deploy servos (base first)
             public ModuleIRTurret Settings => chain[0].module;
             public string Key => string.Join(",", chain.ConvertAll(c => c.part.persistentId.ToString()));
             public string KindName => kind == 0 ? "gun" : kind == 1 ? "launcher" : "camera";
@@ -267,7 +279,8 @@ namespace BDArmory.Avionics
                     var m = q.FindModuleImplementing<ModuleIRTurret>();
                     if (m == null || (!m.aiming && !includeDisabled) || m.tiltRole != 0) continue;
                     var servo = IRServo.Find(q);
-                    if (servo == null || !IRServo.Rotational(servo)) continue;
+                    if (servo == null) continue;
+                    if (m.gantry || !IRServo.Rotational(servo)) { def.gantry.Insert(0, (q, servo, m)); continue; } // lifts / doors / arms
                     def.chain.Insert(0, (q, servo, m));
                 }
                 if (def.chain.Count == 0) continue;
@@ -336,6 +349,7 @@ namespace BDArmory.Avionics
             public ModuleIRTurret settings;
             public List<(Part part, int kind)> options = new();
             public readonly List<Joint> joints = new(); // base first
+            public readonly List<Joint> gantry = new();
             public Part aimPart;
             public ModuleWeapon weapon;
             public MissileBase missile;
@@ -372,6 +386,12 @@ namespace BDArmory.Avionics
                         if (!jointCache.TryGetValue(part, out var j)) jointCache[part] = j = new Joint();
                         j.module = module; j.servo = servo;
                         t.joints.Add(j);
+                    }
+                    foreach (var (part, servo, module) in d.gantry)
+                    {
+                        if (!jointCache.TryGetValue(part, out var j)) jointCache[part] = j = new Joint();
+                        j.module = module; j.servo = servo;
+                        t.gantry.Add(j);
                     }
                     foreach (var o in d.options)
                         if (o.kind == 0 && o.part.FindModuleImplementing<ModuleWeapon>() is ModuleWeapon g && g.customTurretID <= 0) g.customTurretID = GunTurretID;
@@ -427,7 +447,9 @@ namespace BDArmory.Avionics
         {
             if (t.vessel == null || t.aimPart == null || t.aimPart.vessel != t.vessel || (t.missile != null && t.missile.HasFired)) { nextRebuild = 0; return; }
             FollowSelected(t);
-            if (!AimPoint(t, out Vector3 aim, out string what))
+            bool haveTarget = AimPoint(t, out Vector3 aim, out string what);
+            if (t.gantry.Count > 0 && t.settings.gantryOn && !GantryReady(t, haveTarget)) { lines.Remove(t); return; }
+            if (!haveTarget)
             {
                 foreach (var j in t.joints) { j.module.status = $"{t.Kind}: no target"; if (t.settings.restWhenIdle) Command(j, IRServo.Rest(j.servo), IRServo.Speed(j.servo) * 0.5f); }
                 lines.Remove(t);
@@ -461,6 +483,48 @@ namespace BDArmory.Avionics
                 Command(j, target, speed);
                 j.module.status = $"{t.Kind} on {what}, err {err:F1}°";
             }
+        }
+
+        /// <summary>
+        /// Gantry sequence: target -> deploy (each gantry servo after its delay) -> hold -> aim; no target for stowAfter s ->
+        /// aiming servos back to rest -> stow (reverse order). Returns true when the turret may aim.
+        /// </summary>
+        static bool GantryReady(Turret t, bool haveTarget)
+        {
+            var s = t.settings; float now = Time.time;
+            if (haveTarget) s.gLastTarget = now;
+            void Set(int st) { if (s.gState != st) { s.gState = st; s.gT0 = now; } }
+            bool AllAt(bool deployed) { foreach (var g in t.gantry) if (Mathf.Abs(IRServo.Position(g.servo) - (deployed ? g.module.gDeployed : g.module.gStowed)) > 0.6f) return false; return true; }
+            float maxDelay = 0; foreach (var g in t.gantry) maxDelay = Mathf.Max(maxDelay, g.module.gDelay);
+            switch (s.gState)
+            {
+                case 0: // stowed
+                    if (haveTarget) Set(1);
+                    break;
+                case 1: // deploying, in order of delay
+                    foreach (var g in t.gantry) if (now - s.gT0 >= g.module.gDelay) Command(g, g.module.gDeployed, IRServo.MaxSpeed(g.servo));
+                    if ((AllAt(true) && now - s.gT0 >= maxDelay) || now - s.gT0 > maxDelay + 20f) { if (now - s.gT0 >= maxDelay + s.deployHold) Set(2); }
+                    if (!haveTarget && now - s.gLastTarget > s.stowAfter) Set(3);
+                    break;
+                case 2: // ready
+                    if (!haveTarget && now - s.gLastTarget > s.stowAfter) Set(3);
+                    break;
+                case 3: // parking: aiming servos back to rest first
+                    if (haveTarget) { Set(2); break; }
+                    bool parked = true;
+                    foreach (var j in t.joints) { float rest = IRServo.Rest(j.servo); Command(j, rest, IRServo.Speed(j.servo)); if (Mathf.Abs(IRServo.Position(j.servo) - rest) > 1f) parked = false; }
+                    if (parked || now - s.gT0 > 8f) Set(4);
+                    break;
+                case 4: // stowing, reverse order
+                    if (haveTarget) { Set(1); break; }
+                    foreach (var g in t.gantry) if (now - s.gT0 >= maxDelay - g.module.gDelay) Command(g, g.module.gStowed, IRServo.MaxSpeed(g.servo));
+                    if (AllAt(false) || now - s.gT0 > maxDelay + 20f) Set(0);
+                    break;
+            }
+            string st = ModuleIRTurret.GStateNames[s.gState];
+            if (s.gState != 2) foreach (var j in t.joints) { j.module.status = $"{t.Kind}: gantry {st}"; if (s.gState != 3) Command(j, IRServo.Rest(j.servo), IRServo.Speed(j.servo) * 0.5f); }
+            foreach (var g in t.gantry) g.module.status = $"gantry {st}";
+            return s.gState == 2;
         }
 
         /// <summary>Send a move only when the goal has really changed (or every 0.25 s), not every physics frame.</summary>

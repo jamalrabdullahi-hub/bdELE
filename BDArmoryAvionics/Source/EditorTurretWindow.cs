@@ -40,7 +40,29 @@ namespace BDArmory.Avionics
         Vector3 pvTarget, pvOrigin, pvFwd;
 
         // Sections
-        bool openAimAt, openMotion, openCoverage;
+        bool openAimAt, openMotion, openCoverage, openGantry = true, playing;
+
+        /// <summary>Preview: stowed, then each gantry servo eases out after its delay, hold, (aim test), then stow in reverse.</summary>
+        IEnumerator PlaySequence(TurretLogic.Def t)
+        {
+            playing = true;
+            foreach (var g in t.gantry) SetPos(g.servo, g.module.gStowed);
+            float maxDelay = 0; foreach (var g in t.gantry) maxDelay = Mathf.Max(maxDelay, g.module.gDelay);
+            float t0 = Time.time, dur = 1.2f;
+            while (Time.time - t0 < maxDelay + dur)
+            {
+                foreach (var g in t.gantry) { float k = Mathf.Clamp01((Time.time - t0 - g.module.gDelay) / dur); SetPos(g.servo, Mathf.Lerp(g.module.gStowed, g.module.gDeployed, k * k * (3 - 2 * k))); }
+                yield return null;
+            }
+            yield return new WaitForSeconds(Mathf.Max(0.5f, t.Settings.deployHold) + 1.5f);
+            t0 = Time.time;
+            while (Time.time - t0 < maxDelay + dur)
+            {
+                foreach (var g in t.gantry) { float k = Mathf.Clamp01((Time.time - t0 - (maxDelay - g.module.gDelay)) / dur); SetPos(g.servo, Mathf.Lerp(g.module.gDeployed, g.module.gStowed, k * k * (3 - 2 * k))); }
+                yield return null;
+            }
+            playing = false;
+        }
         float[,] coverage;
         string coverageKey = "";
 
@@ -197,6 +219,7 @@ namespace BDArmory.Avionics
                 string range = limited ? $"[{min:F0}..{max:F0}]" : "[0..360 wrap]";
                 AvionicsDraw.ColorLabel(new Rect(0, y, w - 70, 16), $"{part.partInfo.title}  {p:F0} {range}  {kin}", small, module.Measured ? AvionicsDraw.HudText : AvionicsDraw.Unknown);
                 if (GUI.Button(new Rect(w - 66, y - 2, 66, 18), "Exclude", btn)) { ForSym(module, m => m.aiming = false); nextDetect = 0; }
+                if (t.chain.Count > 1 && GUI.Button(new Rect(w - 152, y - 2, 84, 18), "Make gantry", btn)) { ForSym(module, m => { m.gantry = true; m.gStowed = Pos(servo); m.gDeployed = Pos(servo); }); nextDetect = 0; }
                 y += 16;
                 float lo = limited ? min : 0, hi = limited ? max : 360;
                 float np = GUI.HorizontalSlider(new Rect(0, y + 2, w - 70, 14), p, lo, hi);
@@ -207,6 +230,33 @@ namespace BDArmory.Avionics
             }
             AvionicsDraw.ColorLabel(new Rect(0, y, w, 16), "Drag a slider to move that servo (the parts move). Closing the tool resets the pose.", small, AvionicsDraw.ScopeText);
             y += 22;
+
+            // Gantry
+            if (Fold(ref y, w, $"GANTRY / DEPLOY ({t.gantry.Count} servo)", ref openGantry))
+            {
+                AvionicsDraw.ColorLabel(new Rect(0, y, w, 30), "Lifts, arms or doors that bring the turret out before it aims. Linear servos\non the mount are gantry automatically; rotary ones: 'Make gantry' below.", small, AvionicsDraw.ScopeText); y += 32;
+                s.gantryOn = GUI.Toggle(new Rect(0, y, w, 20), s.gantryOn, s.gantryOn ? "Gantry sequence ON" : "Gantry sequence OFF (always out)", s.gantryOn ? on : btn); y += 24;
+                foreach (var (gp, gs, gm) in t.gantry)
+                {
+                    float gpos = Pos(gs);
+                    AvionicsDraw.ColorLabel(new Rect(0, y, w - 70, 16), $"{gp.partInfo.title}  at {gpos:F1}  (stowed {gm.gStowed:F1}, out {gm.gDeployed:F1}, after {gm.gDelay:F1} s)", small, AvionicsDraw.HudText);
+                    if (IRServo.Rotational(gs) && GUI.Button(new Rect(w - 66, y - 2, 66, 18), "Make aim", btn)) { ForSym(gm, m => m.gantry = false); nextDetect = 0; }
+                    y += 16;
+                    float mn = IRServo.Min(gs), mx = IRServo.Max(gs); if (mx <= mn) { mn = gpos - 180; mx = gpos + 180; }
+                    float np = GUI.HorizontalSlider(new Rect(0, y + 2, w - 200, 14), gpos, mn, mx);
+                    if (Mathf.Abs(np - gpos) > 0.05f) SetPos(gs, Mathf.Round(np * 10) / 10);
+                    if (GUI.Button(new Rect(w - 196, y, 96, 18), "Stowed = here", btn)) { float v = gpos; ForSym(gm, m => m.gStowed = v); }
+                    if (GUI.Button(new Rect(w - 98, y, 98, 18), "Deployed = here", btn)) { float v = gpos; ForSym(gm, m => m.gDeployed = v); }
+                    y += 20;
+                    float dl = Slider(ref y, w, $"Starts {gm.gDelay:F1} s into the deploy", gm.gDelay, 0, 10); if (Mathf.Abs(dl - gm.gDelay) > 0.05f) { float v = Mathf.Round(dl * 10) / 10; ForSym(gm, m => m.gDelay = v); }
+                }
+                float hv = Slider(ref y, w, $"Hold {s.deployHold:F1} s after deploying before it aims", s.deployHold, 0, 10); if (Mathf.Abs(hv - s.deployHold) > 0.05f) { float v = Mathf.Round(hv * 10) / 10; ForSym(s, m => m.deployHold = v); }
+                float sv = Slider(ref y, w, $"Stow after {s.stowAfter:F0} s without a target", s.stowAfter, 1, 120); if (Mathf.Abs(sv - s.stowAfter) > 0.5f) { float v = Mathf.Round(sv); ForSym(s, m => m.stowAfter = v); }
+                if (GUI.Button(new Rect(0, y, w / 3 - 3, 20), "Show stowed", btn)) foreach (var g in t.gantry) SetPos(g.servo, g.module.gStowed);
+                if (GUI.Button(new Rect(w / 3, y, w / 3 - 3, 20), "Show deployed", btn)) foreach (var g in t.gantry) SetPos(g.servo, g.module.gDeployed);
+                if (GUI.Button(new Rect(2 * w / 3, y, w / 3, 20), "Play sequence", btn) && !playing) StartCoroutine(PlaySequence(t));
+                y += 26;
+            }
 
             // 2. Aim test
             Head(ref y, w, "2. AIM TEST (the turret points the parts at it)");
