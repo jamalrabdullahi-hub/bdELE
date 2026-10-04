@@ -41,24 +41,35 @@ namespace BDArmory.Avionics
 
         // Sections
         bool openAimAt, openMotion, openCoverage, openGantry = true, playing;
+        float keyTime = 0;
 
         /// <summary>Preview: stowed, then each gantry servo eases out after its delay, hold, (aim test), then stow in reverse.</summary>
         IEnumerator PlaySequence(TurretLogic.Def t)
         {
             playing = true;
             foreach (var g in t.gantry) SetPos(g.servo, g.module.gStowed);
-            float maxDelay = 0; foreach (var g in t.gantry) maxDelay = Mathf.Max(maxDelay, g.module.gDelay);
+            float maxDelay = 0; foreach (var g in t.gantry) maxDelay = Mathf.Max(maxDelay, g.module.HasKeys ? g.module.KeyEnd : g.module.gDelay);
             float t0 = Time.time, dur = 1.2f;
             while (Time.time - t0 < maxDelay + dur)
             {
-                foreach (var g in t.gantry) { float k = Mathf.Clamp01((Time.time - t0 - g.module.gDelay) / dur); SetPos(g.servo, Mathf.Lerp(g.module.gStowed, g.module.gDeployed, k * k * (3 - 2 * k))); }
+                float tt = Time.time - t0;
+                foreach (var g in t.gantry)
+                {
+                    if (g.module.HasKeys) { SetPos(g.servo, g.module.Sample(tt)); continue; }
+                    float k = Mathf.Clamp01((tt - g.module.gDelay) / dur); SetPos(g.servo, Mathf.Lerp(g.module.gStowed, g.module.gDeployed, k * k * (3 - 2 * k)));
+                }
                 yield return null;
             }
             yield return new WaitForSeconds(Mathf.Max(0.5f, t.Settings.deployHold) + 1.5f);
             t0 = Time.time;
             while (Time.time - t0 < maxDelay + dur)
             {
-                foreach (var g in t.gantry) { float k = Mathf.Clamp01((Time.time - t0 - (maxDelay - g.module.gDelay)) / dur); SetPos(g.servo, Mathf.Lerp(g.module.gDeployed, g.module.gStowed, k * k * (3 - 2 * k))); }
+                float tt = Time.time - t0;
+                foreach (var g in t.gantry)
+                {
+                    if (g.module.HasKeys) { SetPos(g.servo, g.module.Sample(maxDelay - tt)); continue; }
+                    float k = Mathf.Clamp01((tt - (maxDelay - g.module.gDelay)) / dur); SetPos(g.servo, Mathf.Lerp(g.module.gDeployed, g.module.gStowed, k * k * (3 - 2 * k)));
+                }
                 yield return null;
             }
             playing = false;
@@ -216,7 +227,7 @@ namespace BDArmory.Avionics
             var t = defs[sel];
             var s = t.Settings;
 
-            scroll = GUI.BeginScrollView(new Rect(8, y, W, rect.height - y - 6), scroll, new Rect(0, 0, W - 18, 1100));
+            scroll = GUI.BeginScrollView(new Rect(8, y, W, rect.height - y - 6), scroll, new Rect(0, 0, W - 18, 1700));
             float w = W - 18; y = 0;
 
             // 1. Measure
@@ -272,6 +283,20 @@ namespace BDArmory.Avionics
                     y += 20;
                     float dl = Slider(ref y, w, $"Starts {gm.gDelay:F1} s into the deploy", gm.gDelay, 0, 10); if (Mathf.Abs(dl - gm.gDelay) > 0.05f) { float v = Mathf.Round(dl * 10) / 10; ForSym(gm, m => m.gDelay = v); }
                 }
+                // Keyframe timeline: pose every servo, pick a time, record. Deploy plays it forward, stow backward.
+                AvionicsDraw.ColorLabel(new Rect(0, y, w, 14), "TIMELINE (several moves per servo)", AvionicsDraw.Header, AvionicsDraw.HudText); y += 16;
+                keyTime = Mathf.Round(Slider(ref y, w, $"Keyframe time {keyTime:F1} s", keyTime, 0, 15) * 10) / 10;
+                if (GUI.Button(new Rect(0, y, w / 3 - 3, 20), "Record pose at t", on)) { foreach (var g in t.gantry) { float p = Pos(g.servo); ForSym(g.module, m => m.SetKey(keyTime, p)); } keyTime = Mathf.Min(15, keyTime + 1); }
+                if (GUI.Button(new Rect(w / 3, y, w / 3 - 3, 20), "Show pose at t", btn)) foreach (var g in t.gantry) if (g.module.HasKeys) SetPos(g.servo, g.module.Sample(keyTime));
+                if (GUI.Button(new Rect(2 * w / 3, y, w / 3, 20), "Clear timeline", btn)) foreach (var g in t.gantry) ForSym(g.module, m => m.gKeys = "");
+                y += 24;
+                foreach (var (gp, gs, gm) in t.gantry)
+                {
+                    if (gm.Keys.Count == 0) continue;
+                    AvionicsDraw.ColorLabel(new Rect(0, y, w, 14), $"{gp.partInfo.title}: " + string.Join("  ", gm.Keys.ConvertAll(k => $"{k.t:0.#}s→{k.pos:0}")), small, AvionicsDraw.ScopeText);
+                    y += 14;
+                }
+                y += 4;
                 float hv = Slider(ref y, w, $"Hold {s.deployHold:F1} s after deploying before it aims", s.deployHold, 0, 10); if (Mathf.Abs(hv - s.deployHold) > 0.05f) { float v = Mathf.Round(hv * 10) / 10; ForSym(s, m => m.deployHold = v); }
                 float sv = Slider(ref y, w, $"Stow after {s.stowAfter:F0} s without a target", s.stowAfter, 1, 120); if (Mathf.Abs(sv - s.stowAfter) > 0.5f) { float v = Mathf.Round(sv); ForSym(s, m => m.stowAfter = v); }
                 if (GUI.Button(new Rect(0, y, w / 3 - 3, 20), "Show stowed", btn)) foreach (var g in t.gantry) SetPos(g.servo, g.module.gStowed);

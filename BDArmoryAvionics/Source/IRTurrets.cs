@@ -50,7 +50,50 @@ namespace BDArmory.Avionics
         // Gantry (deploy) servos: lifts, arms, doors that move the turret out before it aims and put it away after.
         // Per servo (linear servos on the mount count as gantry automatically):
         [KSPField(isPersistant = true)] public bool gantry = false;
-        [KSPField(isPersistant = true)] public uint animTurret = 0;   // animation servo anywhere on the craft: the turret's base servo part id
+        [KSPField(isPersistant = true)] public uint animTurret = 0;
+        // Keyframe timeline (deploy plays forward, stow backward): "t:pos;t:pos;..." seconds and servo positions
+        [KSPField(isPersistant = true)] public string gKeys = "";
+        System.Collections.Generic.List<(float t, float pos)> keysCache; string keysParsed;
+
+        public System.Collections.Generic.List<(float t, float pos)> Keys
+        {
+            get
+            {
+                if (keysCache != null && keysParsed == gKeys) return keysCache;
+                keysCache = new(); keysParsed = gKeys;
+                foreach (var kv in (gKeys ?? "").Split(';'))
+                {
+                    var p = kv.Split(':');
+                    if (p.Length == 2 && float.TryParse(p[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var t) && float.TryParse(p[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var pos)) keysCache.Add((t, pos));
+                }
+                keysCache.Sort((a, b) => a.t.CompareTo(b.t));
+                return keysCache;
+            }
+        }
+
+        /// <summary>Add or replace the keyframe at time t; stowed/deployed become the first/last keyframe.</summary>
+        public void SetKey(float t, float pos)
+        {
+            var k = new System.Collections.Generic.List<(float t, float pos)>(Keys);
+            k.RemoveAll(x => Mathf.Abs(x.t - t) < 0.05f);
+            k.Add((t, pos)); k.Sort((a, b) => a.t.CompareTo(b.t));
+            gKeys = string.Join(";", k.ConvertAll(x => x.t.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + ":" + x.pos.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)));
+            gStowed = k[0].pos; gDeployed = k[k.Count - 1].pos;
+        }
+
+        public bool HasKeys => Keys.Count >= 2;
+        public float KeyEnd => Keys.Count > 0 ? Keys[Keys.Count - 1].t : 0;
+
+        /// <summary>Position on the timeline at time t (linear between keyframes, eased).</summary>
+        public float Sample(float t)
+        {
+            var k = Keys;
+            if (k.Count == 0) return gDeployed;
+            if (t <= k[0].t) return k[0].pos;
+            for (int i = 1; i < k.Count; i++)
+                if (t <= k[i].t) { float a = (t - k[i - 1].t) / Mathf.Max(0.001f, k[i].t - k[i - 1].t); a = a * a * (3 - 2 * a); return Mathf.Lerp(k[i - 1].pos, k[i].pos, a); }
+            return k[k.Count - 1].pos;
+        }   // animation servo anywhere on the craft: the turret's base servo part id
         [KSPField(isPersistant = true)] public float gStowed = 0f, gDeployed = 0f, gDelay = 0f;
         // Per turret (base servo):
         [KSPField(isPersistant = true)] public bool gantryOn = true;
@@ -516,14 +559,18 @@ namespace BDArmory.Avionics
             if (haveTarget) s.gLastTarget = now;
             void Set(int st) { if (s.gState != st) { Debug.Log($"[BDArmoryAvionics]: turret on {t.vessel.GetName()}: gantry {ModuleIRTurret.GStateNames[s.gState]} -> {ModuleIRTurret.GStateNames[st]} ({t.gantry.Count} servos)"); s.gState = st; s.gT0 = now; } }
             bool AllAt(bool deployed) { foreach (var g in t.gantry) if (Mathf.Abs(IRServo.Position(g.servo) - (deployed ? g.module.gDeployed : g.module.gStowed)) > 0.6f) return false; return true; }
-            float maxDelay = 0; foreach (var g in t.gantry) maxDelay = Mathf.Max(maxDelay, g.module.gDelay);
+            float maxDelay = 0; foreach (var g in t.gantry) maxDelay = Mathf.Max(maxDelay, g.module.HasKeys ? g.module.KeyEnd : g.module.gDelay);
             switch (s.gState)
             {
                 case 0: // stowed
                     if (haveTarget) Set(1);
                     break;
                 case 1: // deploying, in order of delay
-                    foreach (var g in t.gantry) if (now - s.gT0 >= g.module.gDelay) Command(g, g.module.gDeployed, IRServo.MaxSpeed(g.servo));
+                    foreach (var g in t.gantry)
+                    {
+                        if (g.module.HasKeys) Command(g, g.module.Sample(now - s.gT0), IRServo.MaxSpeed(g.servo)); // timeline
+                        else if (now - s.gT0 >= g.module.gDelay) Command(g, g.module.gDeployed, IRServo.MaxSpeed(g.servo));
+                    }
                     if ((AllAt(true) && now - s.gT0 >= maxDelay) || now - s.gT0 > maxDelay + 20f) { if (now - s.gT0 >= maxDelay + s.deployHold) Set(2); }
                     if (!haveTarget && now - s.gLastTarget > s.stowAfter) Set(3);
                     break;
@@ -538,7 +585,11 @@ namespace BDArmory.Avionics
                     break;
                 case 4: // stowing, reverse order
                     if (haveTarget) { Set(1); break; }
-                    foreach (var g in t.gantry) if (now - s.gT0 >= maxDelay - g.module.gDelay) Command(g, g.module.gStowed, IRServo.MaxSpeed(g.servo));
+                    foreach (var g in t.gantry)
+                    {
+                        if (g.module.HasKeys) Command(g, g.module.Sample(maxDelay - (now - s.gT0)), IRServo.MaxSpeed(g.servo)); // timeline backwards
+                        else if (now - s.gT0 >= maxDelay - g.module.gDelay) Command(g, g.module.gStowed, IRServo.MaxSpeed(g.servo));
+                    }
                     if (AllAt(false) || now - s.gT0 > maxDelay + 20f) Set(0);
                     break;
             }
