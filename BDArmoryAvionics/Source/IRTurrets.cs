@@ -27,9 +27,12 @@ namespace BDArmory.Avionics
         public string status = "-";
 
         // Logic settings, edited in the SPH/VAB turret tool. Per servo:
-        [KSPField(isPersistant = true)] public int direction = 0;            // 0 auto (probe in flight), 1 = +, -1 = -
-        [KSPField(isPersistant = true)] public string axis = "Auto";         // rotation axis in the part's frame: Auto (from IR), X, Y, Z, -X, -Y, -Z
-        public static readonly string[] AxisOptions = { "Auto", "X", "Y", "Z", "-X", "-Y", "-Z" };
+        // Measured kinematics (by moving the servo a little and watching the mounted part turn): no guessing from configs.
+        [KSPField(isPersistant = true)] public int calFrame = -1;            // reference transform: 0 fixed mesh, 1 moving mesh, 2 servo part, 3 parent part; -1 = not measured
+        [KSPField(isPersistant = true)] public Vector3 calAxis = Vector3.up; // rotation axis in that frame, pointing so +position turns positive
+        [KSPField(isPersistant = true)] public Vector3 calPivot = Vector3.zero; // a point on the axis, in that frame
+        [KSPField(isPersistant = true)] public float calGain = 1f;           // degrees of turn per unit of servo position
+        public bool Measured => calFrame >= 0;
         // Per turret (kept on its base servo):
         [KSPField(isPersistant = true)] public string priority = TurretLogic.DefaultPriority; // order; "-" prefix = disabled
         [KSPField(isPersistant = true)] public string aimWith = "Auto";       // Auto, Gun, Launcher, Camera
@@ -54,8 +57,8 @@ namespace BDArmory.Avionics
         static bool resolved;
         static Type servoType;
         static PropertyInfo position, minPos, maxPos, isRotational, isLocked, isFreeMoving, defaultSpeed, maxSpeed, defaultPosition;
-        static MethodInfo moveTo, getAxis;
-        static FieldInfo axisField;
+        static MethodInfo moveTo, editorSetTo;
+        static FieldInfo movingMesh, fixedMesh;
 
         public static bool Available { get { Resolve(); return servoType != null; } }
 
@@ -81,8 +84,9 @@ namespace BDArmory.Avionics
                     maxSpeed = iservo.GetProperty("MaxSpeed");
                     defaultPosition = iservo.GetProperty("DefaultPosition");
                     moveTo = iservo.GetMethod("MoveTo", new[] { typeof(float), typeof(float) });
-                    getAxis = servoType.GetMethod("GetAxis", Type.EmptyTypes);
-                    axisField = servoType.GetField("axis", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                    editorSetTo = servoType.GetMethod("EditorSetTo", new[] { typeof(float) });
+                    movingMesh = servoType.GetField("movingMeshTransform", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                    fixedMesh = servoType.GetField("fixedMeshTransform", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                     break;
                 }
             }
@@ -103,27 +107,99 @@ namespace BDArmory.Avionics
         public static float Rest(PartModule s) => (float)defaultPosition.GetValue(s);
         public static void MoveTo(PartModule s, float pos, float speed) => moveTo.Invoke(s, new object[] { pos, speed });
 
-        /// <summary>The servo's rotation axis in world space.</summary>
-        public static Vector3 WorldAxis(PartModule s, ModuleIRTurret m)
+        /// <summary>Editor only: put the servo at a position right away (moves the parts on it).</summary>
+        public static void EditorSetTo(PartModule s, float pos) => editorSetTo?.Invoke(s, new object[] { pos });
+        public static bool CanEditorMove => editorSetTo != null;
+
+        /// <summary>Candidate reference transforms for a servo (0 fixed mesh, 1 moving mesh, 2 servo part, 3 parent part).</summary>
+        public static Transform Frame(PartModule s, int which)
         {
-            if (m != null && m.axis != "Auto")
+            switch (which)
             {
-                Vector3 l = m.axis.EndsWith("X") ? Vector3.right : m.axis.EndsWith("Y") ? Vector3.up : Vector3.forward;
-                if (m.axis.StartsWith("-")) l = -l;
-                return s.part.transform.TransformDirection(l).normalized;
+                case 0: return fixedMesh?.GetValue(s) as Transform;
+                case 1: return movingMesh?.GetValue(s) as Transform;
+                case 2: return s.part.transform;
+                case 3: return s.part.parent != null ? s.part.parent.transform : null;
             }
-            return WorldAxis(s);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Servo kinematics measured from the parts themselves: move the servo by a few units and see how the mounted part turned.
+    /// That gives the true axis, which way + turns, the degrees per unit and the pivot, whatever the servo model, mounting or IR settings.
+    /// </summary>
+    public static class ServoKin
+    {
+        public class Sample
+        {
+            public float pos;
+            public readonly Quaternion[] frameRot = new Quaternion[4];
+            public readonly bool[] has = new bool[4];
+            public Quaternion aimRot;
+            public Vector3 aimPos;
         }
 
-        public static Vector3 WorldAxis(PartModule s)
+        /// <summary>Record the servo's candidate frames and the mounted part, relative to a reference that doesn't move (the craft's root).</summary>
+        public static Sample Take(PartModule servo, Part aim, Transform reference)
         {
-            // GetAxis needs the servo's physics joint, which doesn't exist in the editor (it throws there): use the configured axis.
-            Vector3 local = Vector3.zero;
-            if (HighLogic.LoadedSceneIsFlight && getAxis != null)
-                try { local = (Vector3)getAxis.Invoke(s, null); } catch { }
-            if (local == Vector3.zero && axisField != null) local = (Vector3)axisField.GetValue(s);
-            if (local == Vector3.zero) local = Vector3.up;
-            return s.part.transform.TransformDirection(local).normalized;
+            var q = Quaternion.Inverse(reference.rotation);
+            var smp = new Sample { pos = IRServo.Position(servo), aimRot = q * aim.transform.rotation, aimPos = reference.InverseTransformPoint(aim.transform.position) };
+            for (int i = 0; i < 4; i++) { var t = IRServo.Frame(servo, i); smp.has[i] = t != null; if (t != null) smp.frameRot[i] = q * t.rotation; }
+            return smp;
+        }
+
+        /// <summary>Work out the kinematics from two samples; false if the move didn't show.</summary>
+        public static bool Solve(ModuleIRTurret m, PartModule servo, Part aim, Transform reference, Sample a, Sample b, out string why)
+        {
+            why = "";
+            float dPos = b.pos - a.pos;
+            if (Mathf.Abs(dPos) < 0.5f) { why = "servo didn't move"; return false; }
+            Quaternion d = b.aimRot * Quaternion.Inverse(a.aimRot); // the turn, in reference coordinates
+            d.ToAngleAxis(out float ang, out Vector3 ax);
+            if (ang > 180) { ang = 360 - ang; ax = -ax; }
+            if (ang < 0.5f || float.IsNaN(ax.x) || float.IsInfinity(ax.x)) { why = "mounted part didn't turn"; return false; }
+            if (dPos < 0) ax = -ax;
+            // Frame: the candidate that stayed still (it sits on the craft side of this servo).
+            int best = -1; float bestTurn = float.MaxValue;
+            for (int i = 0; i < 4; i++)
+            {
+                if (!a.has[i] || !b.has[i]) continue;
+                float turn = Quaternion.Angle(a.frameRot[i], b.frameRot[i]);
+                if (turn < bestTurn - 0.01f) { bestTurn = turn; best = i; }
+            }
+            if (best < 0 || bestTurn > ang * 0.25f) { why = "no fixed reference"; return false; }
+            // Pivot: centre of the circle the mounted part moved on.
+            Vector3 x0 = a.aimPos, x1 = b.aimPos, chord = Vector3.ProjectOnPlane(x1 - x0, ax);
+            Vector3 c = x0;
+            if (chord.magnitude > 0.01f)
+            {
+                Vector3 mid = (x0 + x1) * 0.5f;
+                float sgn = dPos < 0 ? -1 : 1; // ax was flipped for dPos < 0; the circle centre follows the real turn direction
+                c = mid + Vector3.Cross(ax * sgn, chord).normalized * (chord.magnitude * 0.5f / Mathf.Tan(ang * 0.5f * Mathf.Deg2Rad));
+            }
+            var frame = IRServo.Frame(servo, best);
+            Quaternion frameInRef = best >= 0 ? b.frameRot[best] : Quaternion.identity;
+            // store in the frame's local coordinates
+            Vector3 axisRefWorld = reference.rotation * ax, pivotWorld = reference.TransformPoint(c);
+            m.calFrame = best;
+            m.calAxis = frame.InverseTransformDirection(axisRefWorld).normalized;
+            m.calPivot = frame.InverseTransformPoint(pivotWorld);
+            m.calGain = ang / Mathf.Abs(dPos);
+            return true;
+        }
+
+        /// <summary>World axis (pointing so +position turns positive), pivot and degrees per unit; false if not measured.</summary>
+        public static bool Get(PartModule servo, ModuleIRTurret m, out Vector3 axis, out Vector3 pivot, out float gain)
+        {
+            axis = Vector3.up; pivot = servo.part.transform.position; gain = 1;
+            if (m == null || !m.Measured) return false;
+            var f = IRServo.Frame(servo, m.calFrame);
+            if (f == null) return false;
+            axis = f.TransformDirection(m.calAxis).normalized;
+            pivot = f.TransformPoint(m.calPivot);
+            gain = Mathf.Max(0.01f, m.calGain);
+            return true;
         }
     }
 
@@ -223,14 +299,14 @@ namespace BDArmory.Avionics
     {
         public static bool ShowAimLines;
 
-        /// <summary>One servo. Its direction (does +position turn the barrel + or - about the axis?) is found once with a small test move.</summary>
+        /// <summary>One servo. If it wasn't measured in the SPH/VAB, it's measured once here with a small test move.</summary>
         class Joint
         {
             public ModuleIRTurret module;
             public PartModule servo;
-            public float sign = 1;
-            public bool calibrated, probing;
-            public float probePos0, probePhase0, probeT0;
+            public bool probing, failed;
+            public ServoKin.Sample probe0;
+            public float probeT0, probeTarget;
             public float lastCommand = float.NaN, lastCommandT;
         }
 
@@ -274,7 +350,6 @@ namespace BDArmory.Avionics
                     {
                         if (!jointCache.TryGetValue(part, out var j)) jointCache[part] = j = new Joint();
                         j.module = module; j.servo = servo;
-                        if (module.direction != 0) { j.sign = module.direction; j.calibrated = true; j.probing = false; } // set in the SPH/VAB tool
                         t.joints.Add(j);
                     }
                     t.weapon = d.kind == 0 ? d.aimPart.FindModuleImplementing<ModuleWeapon>() : null;
@@ -311,16 +386,19 @@ namespace BDArmory.Avionics
             foreach (var j in t.joints)
             {
                 if (IRServo.Locked(j.servo) || IRServo.FreeMoving(j.servo)) { j.module.status = "servo locked"; continue; }
-                Vector3 axis = IRServo.WorldAxis(j.servo, j.module);
                 float pos = IRServo.Position(j.servo);
-                float phase = Phase(j, f, axis);
-                if (!j.calibrated) { Probe(j, pos, phase); j.module.status = $"{t.Kind}: checking servo direction"; continue; }
+                if (!ServoKin.Get(j.servo, j.module, out Vector3 axis, out _, out float gain))
+                {
+                    if (!j.failed) { Probe(t, j); j.module.status = $"{t.Kind}: measuring servo"; }
+                    else j.module.status = "couldn't measure this servo";
+                    continue;
+                }
 
                 Vector3 fp = Vector3.ProjectOnPlane(f, axis), dp = Vector3.ProjectOnPlane(d, axis);
                 if (fp.sqrMagnitude < 1e-4f || dp.sqrMagnitude < 1e-4f) continue;
                 float phi = Vector3.SignedAngle(fp, dp, axis); // degrees to turn about this axis
                 if (Mathf.Abs(phi) < t.settings.deadband) { j.module.status = $"{t.Kind} on {what}, err {err:F1}°"; continue; }
-                float target = pos + j.sign * phi;
+                float target = pos + phi / gain;
                 float min = IRServo.Min(j.servo), max = IRServo.Max(j.servo);
                 if (max > min && max - min < 359f) target = Mathf.Clamp(target, min, max);
                 // Slow down near the target so the servo stops on it instead of overshooting and hunting.
@@ -339,38 +417,27 @@ namespace BDArmory.Avionics
             j.lastCommand = target; j.lastCommandT = Time.time;
         }
 
-        /// <summary>Barrel angle about the servo axis, measured against the servo's own part.</summary>
-        static float Phase(Joint j, Vector3 f, Vector3 axis)
+        /// <summary>Move the servo 8 units and measure how the mounted part turned (relative to the craft's root part).</summary>
+        static void Probe(Turret t, Joint j)
         {
-            var refT = j.servo.part.parent != null ? j.servo.part.parent.transform : j.servo.part.transform;
-            Vector3 refDir = Vector3.ProjectOnPlane(refT.forward, axis);
-            if (refDir.sqrMagnitude < 1e-3f) refDir = Vector3.ProjectOnPlane(refT.right, axis);
-            return Vector3.SignedAngle(refDir, Vector3.ProjectOnPlane(f, axis), axis);
-        }
-
-        /// <summary>Move the servo 6° and see which way the barrel turned. Done once per servo; takes about a second.</summary>
-        static void Probe(Joint j, float pos, float phase)
-        {
+            var reference = t.vessel.rootPart.transform;
             if (!j.probing)
             {
-                j.probing = true; j.probePos0 = pos; j.probePhase0 = phase; j.probeT0 = Time.time;
-                float max = IRServo.Max(j.servo), min = IRServo.Min(j.servo);
-                float step = (max > min && pos + 6f > max) ? -6f : 6f;
-                IRServo.MoveTo(j.servo, pos + step, IRServo.Speed(j.servo));
+                j.probing = true; j.probeT0 = Time.time;
+                j.probe0 = ServoKin.Take(j.servo, t.aimPart, reference);
+                float pos = j.probe0.pos, max = IRServo.Max(j.servo), min = IRServo.Min(j.servo);
+                j.probeTarget = pos + ((max > min && pos + 8f > max) ? -8f : 8f);
+                IRServo.MoveTo(j.servo, j.probeTarget, IRServo.Speed(j.servo));
                 j.lastCommand = float.NaN;
                 return;
             }
-            float dPos = pos - j.probePos0, dPhase = Mathf.DeltaAngle(j.probePhase0, phase);
-            if (Mathf.Abs(dPos) > 2f && Mathf.Abs(dPhase) > 1f)
-            {
-                j.sign = Mathf.Sign(dPhase / dPos); j.calibrated = true; j.probing = false;
-                Debug.Log($"[BDArmoryAvionics]: Turret servo {j.servo.part.partInfo.title}: +position turns the barrel {(j.sign > 0 ? "positive" : "negative")}");
-            }
-            else if (Time.time - j.probeT0 > 3f)
-            {
-                j.sign = 1; j.calibrated = true; j.probing = false; // didn't see it move (barrel along the axis?): assume the usual way
-                Debug.Log($"[BDArmoryAvionics]: Turret servo {j.servo.part.partInfo.title}: direction test inconclusive, assuming +");
-            }
+            bool arrived = Mathf.Abs(IRServo.Position(j.servo) - j.probeTarget) < 0.5f;
+            if (!arrived && Time.time - j.probeT0 < 4f) return;
+            var s1 = ServoKin.Take(j.servo, t.aimPart, reference);
+            j.probing = false;
+            if (ServoKin.Solve(j.module, j.servo, t.aimPart, reference, j.probe0, s1, out string why))
+                Debug.Log($"[BDArmoryAvionics]: Turret servo {j.servo.part.partInfo.title} measured: {j.module.calGain:F2}°/unit, frame {j.module.calFrame}");
+            else { j.failed = true; Debug.Log($"[BDArmoryAvionics]: Turret servo {j.servo.part.partInfo.title}: measuring failed ({why})"); }
         }
 
         /// <summary>Where to point: EO/IR camera track, guard target (with BDArmory's own lead), radar lock, targeting camera point, selected contact.</summary>
