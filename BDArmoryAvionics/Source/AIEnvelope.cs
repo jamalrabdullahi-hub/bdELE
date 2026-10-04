@@ -31,6 +31,21 @@ namespace BDArmory.Avionics
             { nameof(BDModulePilotAI.extendDistanceAirToAir), 100000f }, // 20 km
         };
 
+        /// <summary>Normal (clamped) slider maximums: stock is 5 km altitude and 800 m/s, too low for big jets.</summary>
+        public static readonly Dictionary<string, float> ClampedMax = new()
+        {
+            { nameof(BDModulePilotAI.defaultAltitude), 15000f },        // 5000
+            { nameof(BDModulePilotAI.maxAltitude), 15000f },            // 10000
+            { nameof(BDModulePilotAI.bombingAltitude), 15000f },        // 3000
+            { nameof(BDModulePilotAI.autoTuningAltitude), 15000f },     // 5000
+            { nameof(BDModulePilotAI.maxSpeed), 4000f },                // 800 m/s
+            { nameof(BDModulePilotAI.idleSpeed), 4000f },               // 200
+            { nameof(BDModulePilotAI.cornerSpeed), 4000f },             // 500
+            { nameof(BDModulePilotAI.lowSpeedSwitch), 4000f },          // 500
+            { nameof(BDModulePilotAI.strafingSpeed), 4000f },           // 200
+            { nameof(BDModulePilotAI.autoTuningSpeed), 4000f },         // 800
+        };
+
         public class Preset
         {
             public string name, description;
@@ -69,8 +84,8 @@ namespace BDArmory.Avionics
 
         static void RaiseLimits(BDModulePilotAI ai)
         {
-            if (ai == null || !ai.UpToEleven) return;
-            foreach (var kv in ExtendedMax)
+            if (ai == null) return;
+            foreach (var kv in ai.UpToEleven ? ExtendedMax : ClampedMax)
             {
                 var f = ai.Fields[kv.Key];
                 if (f == null) continue;
@@ -84,10 +99,10 @@ namespace BDArmory.Avionics
         {
             static void Postfix(BDModulePilotAI __instance)
             {
+                RaiseLimits(__instance);
                 if (!AvionicsSettings.ShowAllAITweakables) return;
                 foreach (BaseField f in __instance.Fields) f.advancedTweakable = false; // show Unclamp tuning and the rest
                 foreach (BaseEvent e in __instance.Events) e.advancedTweakable = false;
-                RaiseLimits(__instance);
             }
         }
 
