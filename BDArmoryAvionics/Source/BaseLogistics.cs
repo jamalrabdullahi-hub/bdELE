@@ -17,7 +17,7 @@ namespace BDArmory.Avionics
         public string craft = "", path = "";
         public int authorized = 2, available = 2, lost;
         public string role = "Fighter"; // Fighter, Strike, SEAD - what the AI commander uses it for
-        public static readonly string[] Roles = ["Fighter", "Strike", "SEAD", "Multirole", "Support"];
+        public static readonly string[] Roles = ["Fighter", "Strike", "SEAD", "Multirole", "Support", "Helicopter", "Ground", "Naval"];
         public bool Can(string mission) => role == "Multirole" || role == mission;
     }
 
@@ -89,6 +89,7 @@ namespace BDArmory.Avionics
         public static void OnLaunch(Vessel v, Base b, Faction f)
         {
             if (b == null) return;
+            if (f != null && f.denied.Contains(v.GetName())) ScreenMessages.PostScreenMessage($"{v.GetName()} isn't in {f.name}'s arsenal (Theatre > Arsenal)", 5f, ScreenMessageStyle.UPPER_CENTER);
             if (b.status == BaseStatus.Destroyed) ScreenMessages.PostScreenMessage($"{Name(b)} is destroyed - this sortie is off the books", 4f, ScreenMessageStyle.UPPER_CENTER);
             var item = b.inventory.Find(i => i.craft == v.GetName());
             if (item == null) return; // not a tracked type: free (e.g. test craft)
@@ -299,10 +300,10 @@ namespace BDArmory.Avionics
             string[] aa = ["aim", "r73", "r77", "r27", "meteor", "amraam", "sidewinder", "python", "mica", "iris", "hhq", "phoenix", "sparrow"];
             string[] ag = ["bomb", "mk8", "jdam", "gbu", "cbu", "agm", "harm", "tow", "hellfire", "maverick", "cruise", "rbs", "kh", "rocket", "hydra", "jsow", "torpedo"];
             string[] arm = ["harm", "antirad", "kh31", "alarm"];
-            bool hasRadarAny;
+            bool hasRadarAny; string surface; bool vtol;
             foreach (var (name, path) in CraftFiles())
             {
-                bool wm = false, ai = false, hasAA = false, hasAG = false, hasARM = false; hasRadarAny = false;
+                bool wm = false, ai = false, hasAA = false, hasAG = false, hasARM = false; hasRadarAny = false; surface = null; vtol = false; bool inSurfaceAI = false;
                 string part = "";
                 try
                 {
@@ -312,6 +313,10 @@ namespace BDArmory.Avionics
                         if (l.StartsWith("part = ")) part = l.Substring(7).ToLowerInvariant();
                         else if (l == "name = MissileFire") wm = true;
                         else if (l == "name = BDModulePilotAI") ai = true;
+                        else if (l == "name = BDModuleVTOLAI") { ai = true; vtol = true; }
+                        else if (l == "name = BDModuleSurfaceAI") { ai = true; inSurfaceAI = true; surface = "Land"; }
+                        else if (inSurfaceAI && l.StartsWith("SurfaceTypeName = ")) { surface = l.Substring(18).Trim(); inSurfaceAI = false; }
+                        else if (l == "name = ModuleVTOLAssist") vtol = true;
                         else if (l == "name = ModuleRadar") hasRadarAny = true;
                         else if (l == "name = MissileLauncher" || l == "name = BDModularGuidance")
                         {
@@ -339,7 +344,10 @@ namespace BDArmory.Avionics
                 }
                 catch { }
                 if (capacity >= 6) { Debug.Log($"[BDArmoryAvionics]: auto-stock: {name} skipped (transport, {capacity} seats)"); continue; }
-                string role = hasAA && hasAG ? "Multirole" : hasARM && !hasAG ? "SEAD" : hasAG ? "Strike" : hasAA ? "Fighter" : hasRadarAny ? "Support" : "Fighter"; // Support = radar, no missiles (AWACS)
+                string role;
+                if (surface != null) { if (surface == "Stationary") continue; role = surface == "Water" || surface == "Submarine" ? "Naval" : "Ground"; } // static SAM sites are handled by base defence
+                else if (vtol) role = "Helicopter";
+                else role = hasAA && hasAG ? "Multirole" : hasARM && !hasAG ? "SEAD" : hasAG ? "Strike" : hasAA ? "Fighter" : hasRadarAny ? "Support" : "Fighter"; // Support = radar, no missiles (AWACS)
                 list.Add((name, path, role));
             }
             // one entry per craft name
@@ -359,8 +367,10 @@ namespace BDArmory.Avionics
             foreach (var b in sc.bases)
             {
                 if (b.faction != f.name || (!force && b.inventory.Count > 0)) continue;
+                if (force) b.inventory.RemoveAll(i => f.denied.Contains(i.craft)); // arsenal changes
                 foreach (var (name, path, role) in craft)
                 {
+                    if (f.denied.Contains(name)) continue;
                     if (b.inventory.Exists(i => i.craft == name)) continue;
                     b.inventory.Add(new InvItem { craft = name, path = path, role = role, authorized = 2, available = 2 });
                     added++;

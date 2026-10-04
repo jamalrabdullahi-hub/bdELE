@@ -21,16 +21,19 @@ namespace BDArmory.Avionics
         public Color colour = Color.cyan;
         public bool IsPlayer => controller == "Player";
         public BDTeam BDTeam => BDTeam.Get(team);
+        public readonly HashSet<string> denied = new(); // Arsenal: craft this faction may not use
 
         public void Save(ConfigNode n)
         {
             n.AddValue("name", name); n.AddValue("team", team); n.AddValue("controller", controller);
+            n.AddValue("denied", string.Join("|", denied));
             n.AddValue("colour", $"{colour.r:F2},{colour.g:F2},{colour.b:F2}");
         }
 
         public static Faction Load(ConfigNode n)
         {
             var f = new Faction { name = n.GetValue("name") ?? "", team = n.GetValue("team") ?? "A", controller = n.GetValue("controller") ?? "Player" };
+            foreach (var d in (n.GetValue("denied") ?? "").Split('|')) if (d.Length > 0) f.denied.Add(d);
             var c = (n.GetValue("colour") ?? "").Split(',');
             if (c.Length == 3 && float.TryParse(c[0], out float r) && float.TryParse(c[1], out float g) && float.TryParse(c[2], out float b)) f.colour = new Color(r, g, b);
             return f;
@@ -444,11 +447,12 @@ namespace BDArmory.Avionics
             var btn = BDArmorySetup.ButtonStyle; var sel = BDArmorySetup.SelectedButtonStyle;
             var sc = FactionsScenario.Instance;
             float w = rect.width - 16, y = 22;
-            string[] tabs = ["Factions", "Bases", "Commander", "Missions"];
+            string[] tabs = ["Factions", "Bases", "Commander", "Missions", "Arsenal"];
             for (int i = 0; i < tabs.Length; i++) if (GUI.Button(new Rect(8 + i * 104, y, 100, 22), tabs[i], tab == i ? sel : btn)) tab = i;
             y += 28;
 
             if (tab == 2) { DrawCommander(new Rect(8, y, w, rect.height - y - 8)); GUI.DragWindow(new Rect(0, 0, rect.width - 22, 20)); return; }
+            if (tab == 4) { DrawArsenal(new Rect(8, y, w, rect.height - y - 8)); GUI.DragWindow(new Rect(0, 0, rect.width - 22, 20)); return; }
             if (tab == 3) { if (MissionsScenario.Instance != null) MissionsScenario.Instance.Draw(new Rect(8, y, w, rect.height - y - 8)); GUI.DragWindow(new Rect(0, 0, rect.width - 22, 20)); return; }
             if (tab == 0)
             {
@@ -503,6 +507,38 @@ namespace BDArmory.Avionics
         }
 
         Vector2 logScroll;
+
+        Vector2 arsenalScroll; List<(string name, string path, string role)> arsenalCraft; float arsenalT;
+
+        /// <summary>Arsenal: tick which craft each faction may field (you and the AI). Re-stock applies it to the bases.</summary>
+        void DrawArsenal(Rect r)
+        {
+            var btn = BDArmorySetup.ButtonStyle; var sel = BDArmorySetup.SelectedButtonStyle; var small = AvionicsDraw.LabelSmall;
+            var sc = FactionsScenario.Instance;
+            if (arsenalCraft == null || Time.time > arsenalT) { arsenalCraft = BaseLogistics.ClassifyCraft(); arsenalT = Time.time + 10f; }
+            float x = r.x, y = r.y, w = r.width, colW = 90;
+            AvionicsDraw.ColorLabel(new Rect(x, y, w, 30), "Which craft each side may use (from the craft files). The AI only stocks and flies ticked craft;\nlaunching an unticked craft at your own base is flagged. Press Re-stock to apply to the bases.", small, AvionicsDraw.ScopeText);
+            y += 32;
+            float cx = x + 260;
+            foreach (var f in sc.factions) { AvionicsDraw.ColorLabel(new Rect(cx, y, colW, 16), f.name, small, f.colour); cx += colW; }
+            if (GUI.Button(new Rect(w - 90, y - 2, 90, 20), "Re-stock all", btn)) foreach (var f in sc.factions) BaseLogistics.AutoStock(f, true);
+            y += 18;
+            var view = new Rect(x, y, w, r.height - (y - r.y));
+            arsenalScroll = GUI.BeginScrollView(view, arsenalScroll, new Rect(0, 0, w - 18, arsenalCraft.Count * 22));
+            for (int i = 0; i < arsenalCraft.Count; i++)
+            {
+                var (name, _, role) = arsenalCraft[i];
+                AvionicsDraw.ColorLabel(new Rect(0, i * 22 + 3, 250, 16), $"{name}  [{role}]", small, AvionicsDraw.HudText);
+                float bx = 260;
+                foreach (var f in sc.factions)
+                {
+                    bool ok = !f.denied.Contains(name);
+                    if (GUI.Button(new Rect(bx, i * 22, colW - 6, 20), ok ? "allowed" : "denied", ok ? sel : btn)) { if (ok) f.denied.Add(name); else f.denied.Remove(name); }
+                    bx += colW;
+                }
+            }
+            GUI.EndScrollView();
+        }
 
         void DrawCommander(Rect r)
         {

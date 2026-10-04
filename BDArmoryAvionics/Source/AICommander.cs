@@ -14,7 +14,7 @@ using BDArmory.VesselSpawning;
 
 namespace BDArmory.Avionics
 {
-    public enum FlightMission { Strike, SEAD, Intercept, CAP, Escort, AWACS }
+    public enum FlightMission { Strike, SEAD, Intercept, CAP, Escort, AWACS, Convoy, Naval, Helo }
     public enum FlightState { Outbound, Materialized, Returning, Done }
 
     /// <summary>
@@ -36,9 +36,11 @@ namespace BDArmory.Avionics
         public double launchedUT, materializedUT;
         public readonly List<uint> vessels = new();
         public int escortOf;              // Escort: the strike flight it protects
+        public bool Surface => mission == FlightMission.Convoy || mission == FlightMission.Naval;
+        public bool Aircraft => !Surface && mission != FlightMission.Helo; // fixed-wing: spawn hold applies
         public bool lowLevel;             // terrain-masked ingress
         public double holdUntilUT, onStationUntilUT; // package timing; CAP/AWACS time on station
-        public string Callsign => $"{(mission == FlightMission.Intercept || mission == FlightMission.CAP ? "Hawk" : mission == FlightMission.SEAD ? "Weasel" : mission == FlightMission.Escort ? "Viper" : mission == FlightMission.AWACS ? "Magic" : "Hammer")} {id}";
+        public string Callsign => $"{(mission == FlightMission.Intercept || mission == FlightMission.CAP ? "Hawk" : mission == FlightMission.SEAD ? "Weasel" : mission == FlightMission.Escort ? "Viper" : mission == FlightMission.AWACS ? "Magic" : mission == FlightMission.Convoy ? "Iron" : mission == FlightMission.Naval ? "Trident" : mission == FlightMission.Helo ? "Reaper" : "Hammer")} {id}";
 
         public void Save(ConfigNode n)
         {
@@ -226,6 +228,77 @@ namespace BDArmory.Avionics
                     Log($"{f.name}: {a.Callsign} ({awacs.craft}) airborne early warning on station");
                 }
             }
+            PlanSurface(f, cs);
+        }
+
+        /// <summary>Ground convoys toward the nearest enemy base (over land), naval patrols offshore, helicopter strikes / convoy cover.</summary>
+        static void PlanSurface(Faction f, CommanderSettings cs)
+        {
+            double ut = Planetarium.GetUniversalTime();
+            foreach (var b in SC.bases)
+            {
+                if (b.faction != f.name || b.status == BaseStatus.Destroyed) continue;
+                var target = NearestEnemyBase(f, b);
+                // Convoy: armour along the ground toward the enemy (only if the way is dry land); they can capture a base.
+                var ground = b.inventory.Find(x => x.role == "Ground" && x.available > 0 && !string.IsNullOrEmpty(x.path));
+                if (ground != null && target != null && !SC.flights.Exists(x => x.faction == f.name && x.mission == FlightMission.Convoy && x.state != FlightState.Done) && OverLand(b.lat, b.lon, target.lat, target.lon))
+                {
+                    var c = Launch(f, b, ground, Mathf.Min(PvE.MaxFlight + 1, ground.available), FlightMission.Convoy, target.lat, target.lon);
+                    c.targetBase = target.site; c.speed = 12; c.alt = 0;
+                    Log($"{f.name}: convoy {c.Callsign} ({c.count}x {ground.craft}) rolling from {BaseLogistics.Name(b)} toward {BaseLogistics.Name(target)}");
+                    // Helicopters cover the convoy
+                    var helo = b.inventory.Find(x => x.role == "Helicopter" && x.available > 0 && !string.IsNullOrEmpty(x.path));
+                    if (helo != null) { var h = Launch(f, b, helo, Mathf.Min(2, helo.available), FlightMission.Helo, target.lat, target.lon); h.escortOf = c.id; h.speed = 55; h.alt = b.alt + 150; Log($"{f.name}: {h.Callsign} ({h.count}x {helo.craft}) covering convoy {c.Callsign}"); }
+                }
+                // Naval patrol: a point offshore within 30 km
+                var ship = b.inventory.Find(x => x.role == "Naval" && x.available > 0 && !string.IsNullOrEmpty(x.path));
+                if (ship != null && !SC.flights.Exists(x => x.faction == f.name && x.mission == FlightMission.Naval && x.state != FlightState.Done) && Offshore(b, out double plat, out double plon))
+                {
+                    var n = Launch(f, b, ship, Mathf.Min(PvE.MaxFlight, ship.available), FlightMission.Naval, plat, plon);
+                    n.speed = 10; n.alt = 0; n.onStationUntilUT = ut + 4 * 3600;
+                    Log($"{f.name}: naval group {n.Callsign} ({n.count}x {ship.craft}) on patrol off {BaseLogistics.Name(b)}");
+                }
+                // Helicopter strike on a nearby enemy base (within 60 km) if no convoy needs cover
+                var heli = b.inventory.Find(x => x.role == "Helicopter" && x.available > 0 && !string.IsNullOrEmpty(x.path));
+                if (heli != null && target != null && !SC.flights.Exists(x => x.faction == f.name && x.mission == FlightMission.Helo && x.state != FlightState.Done)
+                    && (Body.GetWorldSurfacePosition(b.lat, b.lon, 0) - Body.GetWorldSurfacePosition(target.lat, target.lon, 0)).magnitude < 60000)
+                {
+                    var h = Launch(f, b, heli, Mathf.Min(2, heli.available), FlightMission.Helo, target.lat, target.lon);
+                    h.targetBase = target.site; h.speed = 55; h.alt = b.alt + 150; h.lowLevel = true;
+                    Log($"{f.name}: {h.Callsign} ({h.count}x {heli.craft}) low-level helicopter strike on {BaseLogistics.Name(target)}");
+                }
+            }
+        }
+
+        static bool OverLand(double la1, double lo1, double la2, double lo2)
+        {
+            for (int i = 1; i < 12; i++) { double t = i / 12.0; if (Body.TerrainAltitude(la1 + (la2 - la1) * t, lo1 + (lo2 - lo1) * t) < 1) return false; }
+            return true;
+        }
+
+        static bool Offshore(Base b, out double lat, out double lon)
+        {
+            lat = lon = 0;
+            var c = Body.GetWorldSurfacePosition(b.lat, b.lon, 0); var up = (c - Body.position).normalized;
+            var north = Vector3d.Exclude(up, Body.transform.up).normalized; var east = Vector3d.Cross(up, north);
+            for (int i = 0; i < 16; i++)
+            {
+                double a = UnityEngine.Random.Range(0f, Mathf.PI * 2); var p = c + (north * Math.Cos(a) + east * Math.Sin(a)) * 25000;
+                double la = Body.GetLatitude(p), lo = Body.GetLongitude(p);
+                if (Body.TerrainAltitude(la, lo) < -30 && Body.TerrainAltitude((b.lat + la) / 2, (b.lon + lo) / 2) < 0) { lat = la; lon = lo; return true; }
+            }
+            return false;
+        }
+
+        /// <summary>Combat air patrol over a threatened base while the battle is hot.</summary>
+        static void CAP(Faction f, Base b)
+        {
+            if (PvE.Heat(f.name) < 0.3f || SC.flights.Exists(x => x.faction == f.name && x.mission == FlightMission.CAP && x.state != FlightState.Done)) return;
+            var item = b.inventory.Find(x => x.Can("Fighter") && x.available > 1 && !string.IsNullOrEmpty(x.path));
+            if (item == null) return;
+            var fl = Launch(f, b, item, Mathf.Min(2, item.available - 1), FlightMission.CAP, b.lat, b.lon);
+            fl.alt = 6000; fl.onStationUntilUT = Planetarium.GetUniversalTime() + 1.5 * 3600;
+            Log($"{f.name}: {fl.Callsign} ({fl.count}x {item.craft}) combat air patrol over {BaseLogistics.Name(b)}");
         }
 
         /// <summary>Scramble interceptors when enemy aircraft fly within 80 km of a base (flight scene only).</summary>
@@ -247,6 +320,7 @@ namespace BDArmory.Avionics
                 }
                 if (threat == null) continue;
                 if (b.inventory.Count == 0) BaseLogistics.AutoStock(f);
+                CAP(f, b);
                 var item = b.inventory.Find(x => x.role == "Fighter" && x.available > 0 && !string.IsNullOrEmpty(x.path))
                         ?? b.inventory.Find(x => x.Can("Fighter") && x.available > 0 && !string.IsNullOrEmpty(x.path));
                 if (item == null) continue;
@@ -292,6 +366,12 @@ namespace BDArmory.Avionics
         {
             if (dt <= 0) return;
             if (fl.state == FlightState.Outbound && Planetarium.GetUniversalTime() < fl.holdUntilUT) return; // waiting for its package slot
+            if (fl.mission == FlightMission.Helo && fl.escortOf != 0 && fl.state == FlightState.Outbound)
+            {
+                var conv = SC.flights.Find(x => x.id == fl.escortOf);
+                if (conv == null || conv.state == FlightState.Done || conv.state == FlightState.Returning) { ReturnHome(fl); return; }
+                fl.tLat = conv.lat; fl.tLon = conv.lon;
+            }
             if (fl.mission == FlightMission.Escort && fl.state == FlightState.Outbound)
             {
                 var lead = SC.flights.Find(x => x.id == fl.escortOf);
@@ -315,6 +395,18 @@ namespace BDArmory.Avionics
         static void Arrive(AirFlight fl)
         {
             var target = FactionsScenario.BaseAt(fl.targetBase);
+            if ((fl.mission == FlightMission.Convoy || (fl.mission == FlightMission.Helo && fl.escortOf == 0)) && target != null)
+            {
+                // Ground assault / helicopter strike, resolved by numbers: defenders and SAMs take their toll
+                int sams = BaseDefense.Standing(target);
+                float pLoss = Mathf.Clamp01((fl.mission == FlightMission.Convoy ? 0.15f : 0.2f) + 0.06f * Mathf.Min(sams, 4));
+                int lost = 0; for (int i = 0; i < fl.alive; i++) if (UnityEngine.Random.value < pLoss) lost++;
+                int hit = fl.alive - lost; float dmg = 0; for (int i = 0; i < hit; i++) dmg += UnityEngine.Random.Range(4f, 12f);
+                target.health = Mathf.Max(0, target.health - dmg); BaseLogistics.UpdateStatus(target); Lose(fl, lost);
+                Log($"{fl.Callsign} {(fl.mission == FlightMission.Convoy ? "assaulted" : "hit")} {BaseLogistics.Name(target)}: {hit} made it, {lost} lost, base -{dmg:F0}% ({target.health:F0}%)");
+                ReturnHome(fl); return;
+            }
+            if (fl.mission == FlightMission.Naval && Planetarium.GetUniversalTime() < fl.onStationUntilUT) return; // patrolling
             if ((fl.mission == FlightMission.Strike || fl.mission == FlightMission.SEAD) && target != null)
             {
                 // Base defences: stationed fighters and the base's state decide how many get through.
@@ -469,10 +561,11 @@ namespace BDArmory.Avionics
                 if (!System.IO.File.Exists(fl.path)) { Debug.LogWarning($"[BDArmoryAvionics]: {fl.Callsign}: craft file missing: {fl.path}"); break; }
                 var sp = p + (Vector3d)(right * (i * 300f) - dir * (i * 150f));
                 double lat = body.GetLatitude(sp), lon = body.GetLongitude(sp);
-                double agl = Math.Max(800, fl.alt - Math.Max(0, body.TerrainAltitude(lat, lon)));
+                double agl = fl.mission == FlightMission.Convoy ? 1.5 : fl.mission == FlightMission.Naval ? 0.5 : fl.mission == FlightMission.Helo ? 150 : Math.Max(800, fl.alt - Math.Max(0, body.TerrainAltitude(lat, lon)));
+                if (fl.Surface) sp = p + (Vector3d)(right * (i * 60f) - dir * (i * 80f)); // vehicles in column, ships in line
                 // Catch the new craft the moment it appears (BDArmory's spawn sequence takes a few seconds) and hold it level.
                 var before = new HashSet<uint>(); foreach (var ev in FlightGlobals.Vessels) if (ev != null) before.Add(ev.persistentId);
-                spawnBefore = before; spawnDir = dir; spawnSpeed = fl.speed; spawnStart = Time.time; spawnCaught = false;
+                spawnBefore = fl.Aircraft ? before : null; spawnDir = dir; spawnSpeed = fl.speed; spawnStart = Time.time; spawnCaught = !fl.Aircraft; // no spawn hold for vehicles, ships or helicopters
                 var spawn = StartCoroutine(SingleVesselSpawning.Instance.SpawnVessel(fl.path, lat, lon, agl, heading, 0f));
                 bool held = false; float tSpawn = Time.time;
                 while (SingleVesselSpawning.Instance.vesselsSpawning || Time.time - tSpawn < 0.2f)
@@ -516,7 +609,7 @@ namespace BDArmory.Avionics
                 if (fl.lowLevel) { ai.defaultAltitude = 300; ai.minAltitude = 120; } // under the radar, behind terrain (ELE terrain masking)
             }
             partsAtSpawn[v.persistentId] = v.parts.Count;
-            if (v.GetComponent<SpawnHold>() == null) SpawnHold.Attach(v, dir, fl.speed); // keeps it level until the AI is really flying
+            if (fl.Aircraft && v.GetComponent<SpawnHold>() == null) SpawnHold.Attach(v, dir, fl.speed); // keeps it level until the AI is really flying
             var target = FactionsScenario.BaseAt(fl.targetBase);
             if (fl.mission == FlightMission.Escort)
             {
@@ -525,6 +618,7 @@ namespace BDArmory.Avionics
                 if (lv != null) C2Tasking.Escort(v, lv); else C2Tasking.MoveTo(v, new Vector3d(fl.tLat, fl.tLon, fl.alt));
             }
             else if (fl.mission == FlightMission.Strike || fl.mission == FlightMission.SEAD) { if (target != null) C2Tasking.Strike(v, new Vector3d(target.lat, target.lon, target.alt)); }
+            else if (fl.mission == FlightMission.Convoy || fl.mission == FlightMission.Helo) { if (target != null) C2Tasking.MoveTo(v, new Vector3d(target.lat, target.lon, fl.mission == FlightMission.Helo ? target.alt + 150 : target.alt)); else C2Tasking.MoveTo(v, new Vector3d(fl.tLat, fl.tLon, fl.alt)); }
             else C2Tasking.MoveTo(v, new Vector3d(fl.tLat, fl.tLon, fl.alt));
             var home = FactionsScenario.BaseAt(fl.fromBase);
             if (home != null) BaseLogistics.Track(v, home, fl.craft);
