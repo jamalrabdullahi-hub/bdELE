@@ -62,7 +62,7 @@ namespace BDArmory.Avionics
     public class EOIRView : MonoBehaviour
     {
         public static int Mode = 1; // 0 EO (colour), 1 WHOT, 2 BHOT
-        static readonly string[] ModeNames = { "EO", "WHOT", "BHOT" };
+        static readonly string[] ModeNames = { "EO", "WHOT", "BHOT", "IRON" };
         static Vessel trackVessel;
         static Vector3d trackGeo;   // lat, lon, alt
         static bool trackGround;
@@ -198,7 +198,7 @@ namespace BDArmory.Avionics
 
         // ---- Sensor HUD ----
 
-        static Rect HudRect => new(Screen.width * 0.5f - 230, 8, 460, 26);
+        static Rect HudRect => new(Screen.width * 0.5f - 256, 8, 512, 26);
 
         void OnGUI()
         {
@@ -210,7 +210,7 @@ namespace BDArmory.Avionics
             var btn = BDArmorySetup.ButtonStyle; var sel = BDArmorySetup.SelectedButtonStyle;
             Rect r = HudRect; float x = r.x;
             GUI.Box(r, "", BDArmorySetup.BDGuiSkin.box);
-            for (int i = 0; i < 3; i++) { if (GUI.Button(new Rect(x + 3, r.y + 3, 50, 20), ModeNames[i], Mode == i ? sel : btn)) Mode = i; x += 52; }
+            for (int i = 0; i < 4; i++) { if (i == 3 && VolumetricShaders.Thermal == null) continue; if (GUI.Button(new Rect(x + 3, r.y + 3, 50, 20), ModeNames[i], Mode == i ? sel : btn)) Mode = i; x += 52; }
             x += 6;
             if (GUI.Button(new Rect(x + 3, r.y + 3, 60, 20), "Clear", btn)) ClearTrack(); x += 62;
             if (GUI.Button(new Rect(x + 3, r.y + 3, 60, 20), "To GPS", btn) && TryTrack(out var tp, out _))

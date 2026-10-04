@@ -13,7 +13,7 @@ namespace BDArmory.Avionics
     [KSPAddon(KSPAddon.Startup.Instantly, true)]
     public class VolumetricShaders : MonoBehaviour
     {
-        public static Shader Volume, Distort, Thermal;
+        public static Shader Volume, Distort, Thermal, ThermalBlit;
         public static bool Loaded => Volume != null;
 
         void Awake()
@@ -28,6 +28,7 @@ namespace BDArmory.Avionics
                 if (s.name == "ELE/Volumetric") Volume = s;
                 if (s.name == "ELE/Distort") Distort = s;
                 if (s.name == "ELE/Thermal" && s.isSupported) Thermal = s;
+                if (s.name == "ELE/ThermalBlit" && s.isSupported) ThermalBlit = s;
             }
             bundle.Unload(false);
             Debug.Log($"[BDArmoryAvionics]: volumetric shaders {(Volume != null && Volume.isSupported ? "loaded" : "not supported on this GPU")}, distortion {(Distort != null && Distort.isSupported ? "loaded" : "unavailable")}");

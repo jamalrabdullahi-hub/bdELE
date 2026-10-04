@@ -17,9 +17,9 @@ namespace BDArmory.Avionics
     public static class FLIRModes
     {
         public static bool Active => AvionicsSettings.FLIRMode != 0;
-        public static string ModeName => AvionicsSettings.FLIRMode switch { 1 => "WHOT", 2 => "BHOT", 3 => "GRN", _ => "OFF" };
+        public static string ModeName => AvionicsSettings.FLIRMode switch { 1 => "WHOT", 2 => "BHOT", 3 => "GRN", 4 => "IRON", _ => "OFF" };
 
-        static Material multiply2x, add, invert, tint;
+        static Material multiply2x, add, invert, tint, paletteMat;
         static bool materialsFailed = false;
 
         public static Material Make(BlendMode src, BlendMode dst)
@@ -84,6 +84,18 @@ namespace BDArmory.Avionics
             }
 
             if (AvionicsSettings.FLIRMode == 2) Pass(invert, Color.white);
+            if (AvionicsSettings.FLIRMode == 4 && VolumetricShaders.ThermalBlit != null)
+            {
+                // blue-red palette: map the processed image through the ironbow scale
+                GL.PopMatrix();
+                if (paletteMat == null) paletteMat = new Material(VolumetricShaders.ThermalBlit);
+                var tmp = RenderTexture.GetTemporary(rt.width, rt.height, 0, rt.format);
+                Graphics.Blit(rt, tmp, paletteMat);
+                Graphics.Blit(tmp, rt);
+                RenderTexture.ReleaseTemporary(tmp);
+                RenderTexture.active = prev;
+                return;
+            }
             else if (AvionicsSettings.FLIRMode == 3) Pass(tint, new Color(0.35f, 1f, 0.45f, 1));
 
             GL.PopMatrix();
@@ -140,7 +152,7 @@ namespace BDArmory.Avionics
             if (cam == null) return;
             Vector3 camPos = cam.transform.position;
             float tanHalf = Mathf.Tan(cam.fieldOfView * 0.5f * Mathf.Deg2Rad);
-            Color baseColor = AvionicsSettings.FLIRMode switch { 2 => Color.black, 3 => new Color(0.75f, 1f, 0.75f), _ => Color.white };
+            Color baseColor = AvionicsSettings.FLIRMode switch { 2 => Color.black, 3 => new Color(0.75f, 1f, 0.75f), 4 => new Color(1f, 0.92f, 0.6f), _ => Color.white };
 
             var oldColor = GUI.color;
             GUI.BeginGroup(imageRect);

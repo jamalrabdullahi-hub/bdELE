@@ -181,7 +181,7 @@ namespace BDArmory.Avionics
                 GPSSortMode = Mathf.Clamp(GetInt(node, "GPSSortMode", GPSSortMode), 0, 2);
                 GPSGroupFilter = node.GetValue("GPSGroupFilter") ?? "";
 
-                FLIRMode = Mathf.Clamp(GetInt(node, "FLIRMode", FLIRMode), 0, 3);
+                FLIRMode = Mathf.Clamp(GetInt(node, "FLIRMode", FLIRMode), 0, 4);
                 FLIRContrast = Mathf.Clamp(GetFloat(node, "FLIRContrast", FLIRContrast), 1f, 2.5f);
                 FLIRHeatGlow = GetBool(node, "FLIRHeatGlow", FLIRHeatGlow);
                 TGPHud = GetBool(node, "TGPHud", TGPHud);

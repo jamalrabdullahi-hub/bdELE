@@ -34,7 +34,7 @@ namespace BDArmory.Avionics
             if (e.type == EventType.MouseDown && new Rect(x, y, 240, 18).Contains(e.mousePosition))
                 BDAHooks.CancelCameraSlew();
             if (GUI.Button(new Rect(x, y, 78, 18), $"FLIR {FLIRModes.ModeName}", FLIRModes.Active ? BDArmorySetup.SelectedButtonStyle : btn))
-                AvionicsSettings.FLIRMode = (AvionicsSettings.FLIRMode + 1) % 4;
+                AvionicsSettings.FLIRMode = (AvionicsSettings.FLIRMode + 1) % 5;
             x += 80;
             if (FLIRModes.Active)
             {
