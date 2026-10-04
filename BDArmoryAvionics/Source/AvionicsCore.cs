@@ -212,7 +212,8 @@ namespace BDArmory.Avionics
             AvionicsSettings.ExplosionScale = GUI.Toggle(new Rect(8, y, hw, 20), AvionicsSettings.ExplosionScale, AvionicsSettings.ExplosionScale ? "Sized fireballs" : "BDA fireballs", AvionicsSettings.ExplosionScale ? sel : btn);
             if (GUI.Button(new Rect(12 + hw, y, hw, 20), $"Blast FX: {ExplosionDirector.QualityNames[AvionicsSettings.ExplosionQuality]}", AvionicsSettings.ExplosionQuality > 0 ? sel : btn)) AvionicsSettings.ExplosionQuality = (AvionicsSettings.ExplosionQuality + 1) % 4;
             y += 22;
-            AvionicsSettings.Volumetric = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.Volumetric, !VolumetricShaders.Loaded ? "Volumetric: shaders not installed" : AvionicsSettings.Volumetric ? "Volumetric explosions, haze, shockwaves" : "Volumetric off", AvionicsSettings.Volumetric && VolumetricShaders.Loaded ? sel : btn);
+            AvionicsSettings.Volumetric = GUI.Toggle(new Rect(8, y, hw, 20), AvionicsSettings.Volumetric, !VolumetricShaders.Loaded ? "No shaders" : AvionicsSettings.Volumetric ? "Volumetric FX" : "Volumetric off", AvionicsSettings.Volumetric && VolumetricShaders.Loaded ? sel : btn);
+            AvionicsSettings.VaporCones = GUI.Toggle(new Rect(12 + hw, y, hw, 20), AvionicsSettings.VaporCones, AvionicsSettings.VaporCones ? "Vapor cones" : "Cones off", AvionicsSettings.VaporCones ? sel : btn);
             y += 24;
             var net = DataLinkNetwork.PlayerNetwork;
             var iads = net != null ? IADSController.For(net.team) : null;

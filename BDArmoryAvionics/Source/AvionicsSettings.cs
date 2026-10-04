@@ -101,6 +101,7 @@ namespace BDArmory.Avionics
         public static bool ShowLM = false;
         public static bool MissileDLZ = true;
         public static bool ShowFeeds = false;
+        public static bool VaporCones = true;           // transonic vapor cones + shock ring at Mach 1 (volumetric)
         public static bool Volumetric = true;           // real volumetric explosions / haze / shock (needs the ELE shader bundle)
         public static int ExplosionQuality = 1;         // 0 off, 1 low, 2 medium, 3 high (extra explosion layers)
         public static bool ExplosionShake = true;
@@ -207,6 +208,7 @@ namespace BDArmory.Avionics
                 ExplosionQuality = Mathf.Clamp(GetInt(node, "ExplosionQuality", ExplosionQuality), 0, 3);
                 ExplosionShake = GetBool(node, "ExplosionShake", ExplosionShake);
                 Volumetric = GetBool(node, "Volumetric", Volumetric);
+                VaporCones = GetBool(node, "VaporCones", VaporCones);
                 ExplosionSizeCurve = Mathf.Clamp(GetFloat(node, "ExplosionSizeCurve", ExplosionSizeCurve), 0.3f, 3f);
                 ExplosionSizeCap = Mathf.Clamp(GetFloat(node, "ExplosionSizeCap", ExplosionSizeCap), 1f, 12f);
                 ShrapnelRangeMult = Mathf.Clamp(GetFloat(node, "ShrapnelRangeMult", ShrapnelRangeMult), 1f, 4f);
@@ -303,6 +305,7 @@ namespace BDArmory.Avionics
                 node.AddValue("ExplosionQuality", ExplosionQuality);
                 node.AddValue("ExplosionShake", ExplosionShake);
                 node.AddValue("Volumetric", Volumetric);
+                node.AddValue("VaporCones", VaporCones);
                 node.AddValue("ExplosionSizeCurve", ExplosionSizeCurve);
                 node.AddValue("ExplosionSizeCap", ExplosionSizeCap);
                 node.AddValue("ShrapnelRangeMult", ShrapnelRangeMult);

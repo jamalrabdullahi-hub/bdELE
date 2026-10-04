@@ -89,6 +89,7 @@ namespace BDArmory.Avionics
             v.m.SetColor("_SmokeColor", smoke);
             v.m.SetFloat("_Seed", Random.Range(0f, 100f));
             v.m.SetFloat("_Flatten", onGround ? 0.35f : 0f);
+            v.m.SetFloat("_Shape", 0); v.m.SetFloat("_Ambient", 0.35f);
             v.m.SetFloat("_Density", kind == ExplosionKind.FuelKill ? 2.2f : 1.6f);
             return true;
         }
@@ -125,7 +126,7 @@ namespace BDArmory.Avionics
             float now = Time.time;
             foreach (var v in pool)
             {
-                if (!v.active || v.t == null) continue;
+                if (!v.active || v.t == null || v.kind == 3) continue;
                 float a = (now - v.t0) / v.life;
                 if (a >= 1f) { v.active = false; v.t.gameObject.SetActive(false); continue; }
                 switch (v.kind)
@@ -156,6 +157,32 @@ namespace BDArmory.Avionics
                         break;
                 }
             }
+        }
+
+        // ---- Vapor cones (driven by TransonicFX; kind 3, not aged by Tick) ----
+        public static bool AcquireCone(out Transform t, out Material m)
+        {
+            t = null; m = null;
+            var root = ExplosionDirector.Instance != null ? ExplosionDirector.Instance.transform : null;
+            if (!Enabled || root == null) return false;
+            var v = Get(3, VolumetricShaders.Volume, root);
+            v.active = true; v.t.gameObject.SetActive(true);
+            v.m.SetFloat("_Shape", 1); v.m.SetFloat("_Heat", 0); v.m.SetFloat("_Density", 2.6f); v.m.SetFloat("_Ambient", 0.75f);
+            v.m.SetColor("_SmokeColor", new Color(0.95f, 0.96f, 1f)); v.m.SetFloat("_Seed", Random.Range(0f, 100f));
+            v.m.SetFloat("_Steps", Mathf.Max(8f, BaseSteps * 0.8f));
+            t = v.t; m = v.m;
+            return true;
+        }
+
+        public static void ReleaseCone(Transform t)
+        {
+            foreach (var v in pool) if (v.t == t) { v.active = false; if (t != null) t.gameObject.SetActive(false); }
+        }
+
+        public static void SetSun(Transform t, Material m)
+        {
+            Vector3 sun = Planetarium.fetch != null && Planetarium.fetch.Sun != null ? (Vector3)Planetarium.fetch.Sun.position : Vector3.up * 1e9f;
+            m.SetVector("_SunDir", t.InverseTransformDirection((sun - t.position).normalized));
         }
 
         public static void Clear() { foreach (var v in pool) if (v.t != null) Object.Destroy(v.t.gameObject); pool.Clear(); }
