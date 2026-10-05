@@ -328,7 +328,7 @@ namespace BDArmory.Avionics
             }
             if (nozzleMat == null) { nozzleMat = new Material(Shader.Find("KSP/Emissive/Specular") ?? Shader.Find("KSP/Specular")) { mainTexture = nozzleTex, color = Color.white }; nozzleMat.SetFloat("_Shininess", 0.5f); }
             var skin = Finish();
-            nozzleMat.mainTexture = style == "Stock" ? stockNozTex : nozzleTex;
+            nozzleMat.mainTexture = style == "Stock" ? (StockAtlas ?? stockNozTex) : nozzleTex;
             if (!Jet) { BuildShaftEngine(skin, moveChildren); return; }
 
             float D = diameter, R = D / 2, by = Mathf.Min(bypass, 10f);
@@ -374,6 +374,7 @@ namespace BDArmory.Avionics
                 var pg = new GameObject("petals"); pg.transform.SetParent(jetRoot, false); pg.transform.localPosition = new Vector3(0, yN, 0); built.Add(pg); petals = pg.transform;
                 pg.AddComponent<MeshFilter>().sharedMesh = Petals(18, rNoz0, rNoz1, nozLen, t);
                 pg.AddComponent<MeshRenderer>().sharedMaterial = nozzleMat;
+                StockSkinMesh(pg, "nozzle");
             }
             else
             {
@@ -399,6 +400,7 @@ namespace BDArmory.Avionics
             var bg = new GameObject("blades"); bg.transform.SetParent(fanSpin, false);
             bg.AddComponent<MeshFilter>().sharedMesh = Blades((int)blades, hubR * 0.95f, Ri * 0.99f, fan);
             bg.AddComponent<MeshRenderer>().sharedMaterial = bladeMat;
+            StockSkinMesh(bg, "metal");
             var blur = new GameObject("fanBlur"); blur.transform.SetParent(jetRoot, false); blur.transform.localPosition = new Vector3(0, fanY + 0.01f, 0);
             blur.transform.localRotation = Quaternion.Euler(-90, 0, 0); blur.transform.localScale = Vector3.one * Ri * 2f; built.Add(blur);
             var q = GameObject.CreatePrimitive(PrimitiveType.Quad); Destroy(q.GetComponent<Collider>()); q.transform.SetParent(blur.transform, false);
@@ -446,10 +448,11 @@ namespace BDArmory.Avionics
                 var sp = new List<Vector2>();
                 for (int i = 0; i <= 8; i++) { float ang = i / 8f * Mathf.PI / 2; sp.Add(new Vector2(Mathf.Max(0.003f, Mathf.Sin(ang) * hubR), Mathf.Cos(ang) * tipLen)); }
                 sp.Add(new Vector2(hubR, -0.05f * D));
-                Lathe("spinner", sp, style == "Stock" ? skin : spinnerMat, 32, 1, fanSpin);
+                Lathe("spinner", sp, spinnerMat, 32, 1, fanSpin);
                 var bg = new GameObject("blades"); bg.transform.SetParent(fanSpin, false); bg.transform.localPosition = new Vector3(0, 0.25f * tipLen, 0);
                 bg.AddComponent<MeshFilter>().sharedMesh = PropBlades((int)blades, hubR * 0.8f, propDiameter / 2, Mathf.Clamp(propDiameter * 0.09f, 0.08f, 0.45f), reverse);
                 bg.AddComponent<MeshRenderer>().sharedMaterial = darkMat;
+                StockSkinMesh(bg, "inner");
                 var blur = Sub("propBlur", new Vector3(0, yTop + 0.25f * tipLen + 0.01f, 0), Quaternion.Euler(-90, 0, 0)); blur.localScale = Vector3.one * propDiameter;
                 var q = GameObject.CreatePrimitive(PrimitiveType.Quad); Destroy(q.GetComponent<Collider>()); q.transform.SetParent(blur, false);
                 blurQuad = q.GetComponent<Renderer>(); blurQuad.material = new Material(blurMat); blurQuad.enabled = false;
@@ -499,9 +502,132 @@ namespace BDArmory.Avionics
             return m;
         }
 
+        // ---------------- stock look: Squad's own jet engine texture sheet ----------------
+        // Regions (u0, v0, w, h) on "Squad/Parts/Engine/jetEngines/Jet Engines" (1024², v up)
+        static readonly Rect SkinR = new(0.195f, 0.004f, 0.43f, 0.32f);     // white panelled skin
+        static readonly Rect InnerR = new(0.122f, 0.6f, 0.258f, 0.18f);     // dark grey panel (ducts, faces)
+        static readonly Rect NozzleR = new(0.63f, 0.595f, 0.137f, 0.155f);  // dark metal (nozzles, petals)
+        static readonly Rect MetalR = new(0.77f, 0.595f, 0.216f, 0.155f);   // grey metal (blades, vanes)
+        static readonly Vector2 SpiralC = new(0.7715f, 0.0625f); const float SpiralRad = 0.053f; // the stock spinner spiral
+        static Texture StockAtlasTex; static bool atlasTried;
+        static Texture StockAtlas
+        {
+            get
+            {
+                if (!atlasTried) { atlasTried = true; StockAtlasTex = GameDatabase.Instance.GetTexture("Squad/Parts/Engine/jetEngines/Jet Engines", false); }
+                return StockAtlasTex;
+            }
+        }
+        static readonly Dictionary<string, Material> stockMats = new();
+
+        Material StockMat(string role)
+        {
+            if (role == "nozzle") { nozzleMat.mainTexture = StockAtlas; nozzleMat.color = Color.white; return nozzleMat; }
+            string key = role + "|" + (role == "skin" ? finish : "");
+            if (!stockMats.TryGetValue(key, out var m) || m == null)
+            {
+                m = new Material(Shader.Find("KSP/Specular")) { mainTexture = StockAtlas };
+                m.color = role == "skin" ? (finish == "Dark" ? new Color(0.35f, 0.36f, 0.38f) : finish == "Grey" ? new Color(0.85f, 0.86f, 0.88f) : Color.white) : Color.white;
+                m.SetFloat("_Shininess", role == "metal" ? 0.7f : 0.3f);
+                m.SetColor("_SpecColor", new Color(0.4f, 0.4f, 0.4f));
+                stockMats[key] = m;
+            }
+            return m;
+        }
+
+        string Role(Material mat) => mat == nozzleMat ? "nozzle" : mat == darkMat || mat == innerMat ? "inner" : mat == spinnerMat ? "spinner" : mat == bladeMat ? "metal" : "skin";
+        static Rect RectFor(string role) => role == "nozzle" ? NozzleR : role == "inner" ? InnerR : role == "metal" ? MetalR : SkinR;
+
+        /// <summary>
+        /// Lathe mapped onto the stock texture sheet: each quad gets its own vertices so the panel region tiles cleanly
+        /// around and along the body (an atlas can't wrap); smooth normals from the profile; the spinner gets the stock spiral.
+        /// </summary>
+        GameObject LatheStock(string name, List<Vector2> prof, Material srcMat, int seg, Transform parent)
+        {
+            string role = Role(srcMat);
+            var go = new GameObject(name); go.transform.SetParent(parent ?? jetRoot, false); built.Add(go);
+            var v = new List<Vector3>(); var n = new List<Vector3>(); var uv = new List<Vector2>(); var tri = new List<int>();
+            int rings = prof.Count;
+            var acc = new float[rings]; for (int i = 1; i < rings; i++) acc[i] = acc[i - 1] + (prof[i] - prof[i - 1]).magnitude;
+            float total = Mathf.Max(0.001f, acc[rings - 1]);
+            // profile normals (outward for a profile running -Y), averaged at the rings
+            var pn = new Vector2[rings];
+            for (int i = 0; i < rings; i++)
+            {
+                Vector2 t = prof[Mathf.Min(i + 1, rings - 1)] - prof[Mathf.Max(i - 1, 0)];
+                pn[i] = new Vector2(-t.y, t.x).normalized;
+            }
+            Vector3 P(int i, int sIdx) { float a = sIdx * Mathf.PI * 2 / seg; return new Vector3(Mathf.Cos(a) * prof[i].x, prof[i].y, Mathf.Sin(a) * prof[i].x); }
+            Vector3 N(int i, int sIdx) { float a = sIdx * Mathf.PI * 2 / seg; return new Vector3(Mathf.Cos(a) * pn[i].x, pn[i].y, Mathf.Sin(a) * pn[i].x); }
+
+            if (role == "spinner")
+            {
+                // polar mapping onto the spiral disc: tip at the centre, base at the rim
+                for (int i = 0; i < rings; i++)
+                    for (int sIdx = 0; sIdx <= seg; sIdx++)
+                    {
+                        float a = sIdx * Mathf.PI * 2 / seg, f = Mathf.Clamp01(acc[i] / total) * 0.97f;
+                        v.Add(P(i, sIdx)); n.Add(N(i, sIdx)); uv.Add(SpiralC + new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * SpiralRad * f);
+                    }
+                for (int i = 0; i < rings - 1; i++)
+                    for (int sIdx = 0; sIdx < seg; sIdx++) { int a = i * (seg + 1) + sIdx, b = a + seg + 1; tri.AddRange(new[] { a, a + 1, b, a + 1, b + 1, b }); }
+            }
+            else
+            {
+                var rect = RectFor(role);
+                float rMax = 0.05f; foreach (var p in prof) rMax = Mathf.Max(rMax, p.x);
+                float tileW = role == "skin" ? 1.6f : 0.8f;                                      // metres of skin per texture tile, around
+                int around = Mathf.Max(1, Mathf.RoundToInt(2 * Mathf.PI * rMax / tileW));
+                if (role == "nozzle") around = Mathf.Max(4, around);
+                seg = Mathf.Max(around, Mathf.CeilToInt(seg / (float)around) * around);
+                int perTile = seg / around;
+                float tileH = tileW * (rect.height / rect.width);                               // keep the panels square-ish
+                if (role == "nozzle") tileH = Mathf.Max(total, 0.01f);                           // one gradient along the nozzle
+                for (int i = 0; i < rings - 1; i++)
+                {
+                    float va = acc[i] / tileH, vb = acc[i + 1] / tileH, vf = Mathf.Floor(va);
+                    float v0 = Mathf.Clamp01(va - vf), v1 = Mathf.Clamp01(vb - vf);
+                    for (int sIdx = 0; sIdx < seg; sIdx++)
+                    {
+                        float u0 = (sIdx % perTile) / (float)perTile, u1 = (sIdx % perTile + 1) / (float)perTile;
+                        int k = v.Count;
+                        v.Add(P(i, sIdx)); v.Add(P(i, sIdx + 1)); v.Add(P(i + 1, sIdx)); v.Add(P(i + 1, sIdx + 1));
+                        n.Add(N(i, sIdx)); n.Add(N(i, sIdx + 1)); n.Add(N(i + 1, sIdx)); n.Add(N(i + 1, sIdx + 1));
+                        uv.Add(new Vector2(rect.x + u0 * rect.width, rect.y + v0 * rect.height)); uv.Add(new Vector2(rect.x + u1 * rect.width, rect.y + v0 * rect.height));
+                        uv.Add(new Vector2(rect.x + u0 * rect.width, rect.y + v1 * rect.height)); uv.Add(new Vector2(rect.x + u1 * rect.width, rect.y + v1 * rect.height));
+                        tri.AddRange(new[] { k, k + 1, k + 2, k + 1, k + 3, k + 2 });
+                    }
+                }
+            }
+            var m = new Mesh { name = name };
+            if (v.Count > 65000) m.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+            m.SetVertices(v); m.SetNormals(n); m.SetUVs(0, uv); m.SetTriangles(tri, 0); m.RecalculateBounds();
+            go.AddComponent<MeshFilter>().sharedMesh = m; go.AddComponent<MeshRenderer>().sharedMaterial = StockMat(role == "spinner" ? "inner" : role);
+            return go;
+        }
+
+        /// <summary>Stock style: point a generated mesh's UVs at one region of the stock sheet and give it the stock material.</summary>
+        void StockSkinMesh(GameObject go, string role)
+        {
+            if (style != "Stock" || StockAtlas == null || go == null) return;
+            var mf = go.GetComponent<MeshFilter>(); var mr = go.GetComponent<MeshRenderer>();
+            if (mf == null || mr == null) return;
+            var m = mf.sharedMesh; var rect = RectFor(role);
+            var src = new List<Vector2>(); m.GetUVs(0, src);
+            var uv = new Vector2[m.vertexCount];
+            for (int i = 0; i < uv.Length; i++)
+            {
+                var p = i < src.Count ? src[i] : new Vector2(0.5f, (i % 7) / 7f);
+                uv[i] = new Vector2(rect.x + Mathf.Clamp01(p.x) * rect.width, rect.y + Mathf.Clamp01(p.y) * rect.height);
+            }
+            m.uv = uv;
+            mr.sharedMaterial = StockMat(role);
+        }
+
         /// <summary>Surface of revolution about Y. The profile's direction sets which side faces out (left of travel when going -Y).</summary>
         GameObject Lathe(string name, List<Vector2> prof, Material mat, int seg, float uRepeat, Transform parent = null)
         {
+            if (style == "Stock" && StockAtlas != null) return LatheStock(name, prof, mat, seg, parent);
             var go = new GameObject(name); go.transform.SetParent(parent ?? jetRoot, false); built.Add(go);
             var v = new List<Vector3>(); var uv = new List<Vector2>(); var tri = new List<int>();
             float total = 0; var acc = new float[prof.Count];
@@ -572,6 +698,7 @@ namespace BDArmory.Avionics
             var go = new GameObject(name); go.transform.SetParent(jetRoot, false); go.transform.localPosition = new Vector3(0, y, 0); built.Add(go);
             var m = new Mesh { name = name }; m.SetVertices(v); m.SetTriangles(tri, 0); m.RecalculateNormals(); m.RecalculateBounds();
             go.AddComponent<MeshFilter>().sharedMesh = m; go.AddComponent<MeshRenderer>().sharedMaterial = mat;
+            StockSkinMesh(go, "inner");
         }
 
         /// <summary>Afterburner nozzle petals: overlapping curved plates, double-sided, opened by scaling X/Z.</summary>
