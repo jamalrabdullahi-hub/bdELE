@@ -25,6 +25,7 @@ namespace BDArmory.Avionics
         [KSPField] public Vector3 modelRotation = Vector3.zero; // fix-up if a cockpit mounts the prop on its side
         [KSPField] public int resolution = 512;
         [KSPField] public float refreshHz = 12f;
+        [KSPField] public string startPage = "CAM";   // CAM WPN ENG RDR SYS: the page it opens on
 
         static readonly string[] Pages = { "CAM", "WPN", "ENG", "RDR", "SYS" };
         static readonly string[][] Actions =
@@ -50,6 +51,7 @@ namespace BDArmory.Avionics
 
         public override void OnAwake()
         {
+            page = Mathf.Max(0, System.Array.IndexOf(Pages, startPage));
             // IVA props must live on the interior's layer, or the flight camera draws them in the world
             int layer = internalProp.internalModel != null ? internalProp.internalModel.gameObject.layer : 16;
             if (layer == 0) layer = 16;

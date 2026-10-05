@@ -249,9 +249,19 @@ namespace BDArmory.Avionics
     {
         public override void OnLoad(ConfigNode node)
         {
-            if (!node.HasNode("LOFT")) return;
+            if (!node.HasNode("LOFT") && !node.HasNode("LIGHT")) return;
             var root = internalModel != null ? internalModel.transform : transform;
             foreach (Transform t in root.GetComponentsInChildren<Transform>(true)) if (t.name.StartsWith("loft_")) return;
+            // room lights (IVA layer only): LIGHT { pos  range  intensity  color }
+            foreach (var l in node.GetNodes("LIGHT"))
+            {
+                var go = new GameObject("loft_light"); go.layer = 16; go.transform.SetParent(root, false);
+                go.transform.localPosition = ConfigNode.ParseVector3(l.GetValue("pos") ?? "0,1.5,0");
+                var li = go.AddComponent<Light>(); li.type = LightType.Point; li.cullingMask = 1 << 16;
+                li.range = float.Parse(l.GetValue("range") ?? "6", System.Globalization.CultureInfo.InvariantCulture);
+                li.intensity = float.Parse(l.GetValue("intensity") ?? "1", System.Globalization.CultureInfo.InvariantCulture);
+                li.color = l.HasValue("color") ? ConfigNode.ParseColor(l.GetValue("color")) : new Color(1f, 0.96f, 0.9f);
+            }
             foreach (var l in node.GetNodes("LOFT"))
             {
                 try { LoftBuilder.Build(l, root, 16, n => FindIn(root, n)); }
