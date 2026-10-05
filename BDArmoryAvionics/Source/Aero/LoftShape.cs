@@ -224,7 +224,8 @@ namespace BDArmory.Avionics
             go.transform.SetParent(parent, false);
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
             go.AddComponent<MeshRenderer>().sharedMaterial = StockSkin.Mat(role, tint);
-            if (coll) { var mc = go.AddComponent<MeshCollider>(); mc.convex = true; mc.sharedMesh = mesh; }
+            if (coll) { var mc = go.AddComponent<MeshCollider>(); mc.convex = n.GetValue("convex") != "false"; mc.sharedMesh = mesh; } // convex = false: walls you can stand inside (IVA shells)
+            if (n.GetValue("hidden") == "true") go.GetComponent<MeshRenderer>().enabled = false;                                        // collider only
             return go;
         }
 
