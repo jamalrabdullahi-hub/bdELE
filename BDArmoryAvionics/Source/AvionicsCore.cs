@@ -35,7 +35,7 @@ namespace BDArmory.Avionics
 
         void Start()
         {
-            menuRect = new Rect(Screen.width - 300, 90, 240, 752);
+            menuRect = new Rect(Screen.width - 300, 90, 240, 774);
             radarRectIndex = GUIUtils.RegisterGUIRect(new Rect());
             listRectIndex = GUIUtils.RegisterGUIRect(new Rect());
             gpsRectIndex = GUIUtils.RegisterGUIRect(new Rect());
@@ -217,6 +217,9 @@ namespace BDArmory.Avionics
             y += 22;
             AvionicsSettings.DynamicDamage = GUI.Toggle(new Rect(8, y, hw, 20), AvionicsSettings.DynamicDamage, AvionicsSettings.DynamicDamage ? "Dents & bends" : "Damage FX off", AvionicsSettings.DynamicDamage ? sel : btn);
             if (GUI.Button(new Rect(12 + hw, y, hw, 20), $"Damage x{AvionicsSettings.DamageIntensity:0.#}", btn)) AvionicsSettings.DamageIntensity = AvionicsSettings.DamageIntensity >= 2f ? 0.5f : AvionicsSettings.DamageIntensity + 0.5f;
+            y += 22;
+            if (GUI.Button(new Rect(8, y, hw, 20), $"Slow-mo: {SlowMo.Names[SlowMo.Index]}", SlowMo.Index > 0 ? sel : btn)) SlowMo.Set((SlowMo.Index + 1) % SlowMo.Speeds.Length);
+            if (GUI.Button(new Rect(12 + hw, y, hw, 20), SlowMo.Frozen ? "Unfreeze" : "Freeze", SlowMo.Frozen ? sel : btn)) SlowMo.ToggleFreeze();
             y += 22;
             ExplosionTestWindow.Show = GUI.Toggle(new Rect(8, y, w, 20), ExplosionTestWindow.Show, "Explosion FX test panel", ExplosionTestWindow.Show ? sel : btn);
             y += 22;
