@@ -146,7 +146,7 @@ namespace BDArmory.Avionics
                 AvionicsDraw.ColorLabel(new Rect(8, y, w, 60), "OfCourseIStillLoveYou isn't loaded.\nInstall its plugin in GameData (and HullCam VDS).", AvionicsDraw.Label, AvionicsDraw.Unknown);
                 GUI.DragWindow(); return;
             }
-            AvionicsDraw.ColorLabel(new Rect(8, y, w, 28), "Start OfCourseIStillLoveYou.Server, then the DesktopClient\n(Documents\\KSP-Mods\\OCISLY) to see the feeds outside KSP.", small, AvionicsDraw.ScopeText); y += 30;
+            AvionicsDraw.ColorLabel(new Rect(8, y, w, 28), "Start OfCourseIStillLoveYou.Server, then its DesktopClient,\nto see the feeds outside KSP.", small, AvionicsDraw.ScopeText); y += 30;
             AvionicsSettings.AutoFeeds = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.AutoFeeds, "Auto feeds: loitering munitions, CSAR pickups", AvionicsSettings.AutoFeeds ? sel : btn); y += 26;
 
             var team = BDArmorySetup.Instance?.ActiveWeaponManager?.Team;

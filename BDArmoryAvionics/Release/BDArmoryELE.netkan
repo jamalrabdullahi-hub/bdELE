@@ -1,0 +1,35 @@
+{
+    "spec_version": "v1.18",
+    "identifier": "BDArmoryELE",
+    "name": "BD Armory: Enhanced Lethality Edition",
+    "abstract": "Radar/EW, C2/IADS, AI commander campaign, AI flight control, explosions and damage, helicopters, ground vehicles, procedural engines and cockpit screens for BDArmory.",
+    "$kref": "#/ckan/github/OWNER/REPO",
+    "$vref": "#/ckan/ksp-avc",
+    "license": "CC-BY-SA-4.0",
+    "tags": [ "plugin", "combat", "parts", "physics" ],
+    "depends": [
+        { "name": "BDArmoryForRunwayProject" },
+        { "name": "Harmony2" },
+        { "name": "ModuleManager" }
+    ],
+    "recommends": [
+        { "name": "HullcamVDSContinued" },
+        { "name": "RasterPropMonitor-Core" },
+        { "name": "ASETProps" },
+        { "name": "FreeIva" },
+        { "name": "ProbeControlRoom" }
+    ],
+    "suggests": [
+        { "name": "InfernalRoboticsNext" },
+        { "name": "KAS" },
+        { "name": "DestructionEffects" },
+        { "name": "KerbalKonstructs" },
+        { "name": "ThroughTheEyesOfaKerbal" },
+        { "name": "ProceduralParts" },
+        { "name": "B9-PWings-Fork" }
+    ],
+    "install": [
+        { "find": "BDArmoryAvionics", "install_to": "GameData" },
+        { "find": "Ships/SPH", "install_to": "Ships" }
+    ]
+}

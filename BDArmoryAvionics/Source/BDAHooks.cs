@@ -9,7 +9,7 @@ using BDArmory.Targeting;
 
 // KSP checks these names/versions at load time. BDArmory registers itself as "BDArmory" V1.0.0 (whatever its release number),
 // and the 000_Harmony package registers as "HarmonyKSP" V1.0.0.
-[assembly: KSPAssembly("BDArmoryAvionics", 0, 4)]
+[assembly: KSPAssembly("BDArmoryAvionics", 1, 0)]
 [assembly: KSPAssemblyDependency("BDArmory", 1, 0)]
 [assembly: KSPAssemblyDependency("HarmonyKSP", 1, 0)]
 
