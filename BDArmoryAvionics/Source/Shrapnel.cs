@@ -27,6 +27,7 @@ namespace BDArmory.Avionics
         const float FragMass = 0.046f, Caliber = 12.7f, FragSpeed = 900f;
         const int RayBudgetPerFrame = 2500, MaxHoles = 60, MaxStreaks = 40; // kept low so salvos stay smooth
         static int frame = -1, raysThisFrame;
+        static readonly RaycastHit[] firstHits = new RaycastHit[RayBudgetPerFrame];
 
         public static float BlastRadius(Part explosive, float tnt)
         {
@@ -69,20 +70,46 @@ namespace BDArmory.Avionics
             Quaternion toAxis = Quaternion.FromToRotation(Vector3.up, axis);
             int hits = 0, holes = 0, streaks = 0; float damage = 0;
             var srcType = type == ExplosionSourceType.Other ? ExplosionSourceType.Missile : type;
+            // All fragment rays go to Unity's physics job system in one batch (worker threads), first hit per ray.
+            var dirs = new Vector3[n]; var reaches = new float[n];
+            var cmds = new Unity.Collections.NativeArray<RaycastCommand>(n, Unity.Collections.Allocator.TempJob);
+            var results = new Unity.Collections.NativeArray<RaycastHit>(n, Unity.Collections.Allocator.TempJob);
+            try
+            {
+                for (int i = 0; i < n; i++)
+                {
+                    // Even spread over the cap (Fibonacci over y in [cosMin, 1]), jittered.
+                    float y = 1f - (i + 0.5f) / n * (1f - cosMin), r = Mathf.Sqrt(Mathf.Max(0, 1f - y * y)), th = golden * i + Random.Range(-0.05f, 0.05f);
+                    dirs[i] = toAxis * new Vector3(Mathf.Cos(th) * r, y, Mathf.Sin(th) * r);
+                    reaches[i] = range * Random.Range(0.7f, 1f);
+                    cmds[i] = new RaycastCommand(pos, dirs[i], reaches[i], mask, 1);
+                }
+                RaycastCommand.ScheduleBatch(cmds, results, 32).Complete();
+                for (int i = 0; i < n; i++) firstHits[i] = results[i];
+            }
+            finally { cmds.Dispose(); results.Dispose(); }
+
             for (int i = 0; i < n; i++)
             {
-                // Even spread over the cap (Fibonacci over y in [cosMin, 1]), jittered.
-                float y = 1f - (i + 0.5f) / n * (1f - cosMin), r = Mathf.Sqrt(Mathf.Max(0, 1f - y * y)), th = golden * i + Random.Range(-0.05f, 0.05f);
-                Vector3 dir = toAxis * new Vector3(Mathf.Cos(th) * r, y, Mathf.Sin(th) * r);
-                float reach = range * Random.Range(0.7f, 1f);
-                int count = Physics.RaycastNonAlloc(pos, dir, hitBuf, reach, mask);
+                Vector3 dir = dirs[i]; float reach = reaches[i];
                 RaycastHit best = default; float bestD = float.MaxValue; Part bestPart = null;
-                for (int k = 0; k < count; k++)
+                var fh = firstHits[i];
+                if (fh.collider != null)
                 {
-                    var h = hitBuf[k];
-                    var p = h.collider.GetComponentInParent<Part>();
-                    if (p != null && (p == explosive || (own != null && p.vessel == own))) continue;
-                    if (h.distance < bestD) { bestD = h.distance; best = h; bestPart = p; }
+                    var p0 = fh.collider.GetComponentInParent<Part>();
+                    if (p0 != null && (p0 == explosive || (own != null && p0.vessel == own)))
+                    {
+                        // first hit is our own vessel: look past it the old way (rare)
+                        int count = Physics.RaycastNonAlloc(pos, dir, hitBuf, reach, mask);
+                        for (int k = 0; k < count; k++)
+                        {
+                            var h = hitBuf[k];
+                            var p = h.collider.GetComponentInParent<Part>();
+                            if (p != null && (p == explosive || (own != null && p.vessel == own))) continue;
+                            if (h.distance < bestD) { bestD = h.distance; best = h; bestPart = p; }
+                        }
+                    }
+                    else { best = fh; bestD = fh.distance; bestPart = p0; }
                 }
                 bool hit = bestD < float.MaxValue;
                 if (streaks < MaxStreaks && (i % Mathf.Max(1, n / MaxStreaks)) == 0) { ShrapnelStreaks.Add(pos, pos + dir * (hit ? bestD : reach)); streaks++; }

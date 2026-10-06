@@ -35,7 +35,7 @@ namespace BDArmory.Avionics
 
         void Start()
         {
-            menuRect = new Rect(Screen.width - 300, 90, 240, 774);
+            menuRect = new Rect(Screen.width - 300, 90, 240, 840);
             radarRectIndex = GUIUtils.RegisterGUIRect(new Rect());
             listRectIndex = GUIUtils.RegisterGUIRect(new Rect());
             gpsRectIndex = GUIUtils.RegisterGUIRect(new Rect());
@@ -217,6 +217,15 @@ namespace BDArmory.Avionics
             y += 22;
             AvionicsSettings.DynamicDamage = GUI.Toggle(new Rect(8, y, hw, 20), AvionicsSettings.DynamicDamage, AvionicsSettings.DynamicDamage ? "Dents & bends" : "Damage FX off", AvionicsSettings.DynamicDamage ? sel : btn);
             if (GUI.Button(new Rect(12 + hw, y, hw, 20), $"Damage x{AvionicsSettings.DamageIntensity:0.#}", btn)) AvionicsSettings.DamageIntensity = AvionicsSettings.DamageIntensity >= 2f ? 0.5f : AvionicsSettings.DamageIntensity + 0.5f;
+            y += 22;
+            AvionicsSettings.PhysicsLOD = GUI.Toggle(new Rect(8, y, hw, 20), AvionicsSettings.PhysicsLOD, AvionicsSettings.PhysicsLOD ? $"Physics LOD {PhysicsLOD.Full}/{PhysicsLOD.Rigid}/{PhysicsLOD.Ghost}" : "Physics LOD off", AvionicsSettings.PhysicsLOD ? sel : btn);
+            if (GUI.Button(new Rect(12 + hw, y, hw, 20), $"Full {AvionicsSettings.LODUnpackKm:F0} km", btn)) AvionicsSettings.LODUnpackKm = AvionicsSettings.LODUnpackKm >= 25 ? 5 : AvionicsSettings.LODUnpackKm + 5;
+            y += 22;
+            AvionicsSettings.LODMarkers = GUI.Toggle(new Rect(8, y, hw, 20), AvionicsSettings.LODMarkers, AvionicsSettings.LODMarkers ? "Far markers" : "Markers off", AvionicsSettings.LODMarkers ? sel : btn);
+            if (GUI.Button(new Rect(12 + hw, y, hw, 20), $"Loaded {AvionicsSettings.LODLoadKm:F0} km", btn)) AvionicsSettings.LODLoadKm = AvionicsSettings.LODLoadKm >= 100 ? 15 : AvionicsSettings.LODLoadKm + 15;
+            y += 22;
+            AvionicsSettings.KrakenGuard = GUI.Toggle(new Rect(8, y, hw, 20), AvionicsSettings.KrakenGuard, AvionicsSettings.KrakenGuard ? $"Kraken guard ({KrakenGuard.Fixes})" : "Kraken guard off", AvionicsSettings.KrakenGuard ? sel : btn);
+            AvionicsSettings.Profiler = GUI.Toggle(new Rect(12 + hw, y, hw, 20), AvionicsSettings.Profiler, "Profiler", AvionicsSettings.Profiler ? sel : btn);
             y += 22;
             if (GUI.Button(new Rect(8, y, hw, 20), $"Slow-mo: {SlowMo.Names[SlowMo.Index]}", SlowMo.Index > 0 ? sel : btn)) SlowMo.Set((SlowMo.Index + 1) % SlowMo.Speeds.Length);
             if (GUI.Button(new Rect(12 + hw, y, hw, 20), SlowMo.Frozen ? "Unfreeze" : "Freeze", SlowMo.Frozen ? sel : btn)) SlowMo.ToggleFreeze();

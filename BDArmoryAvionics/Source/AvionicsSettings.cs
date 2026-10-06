@@ -105,6 +105,12 @@ namespace BDArmory.Avionics
         public static bool FCSAll = true;               // ELE flight control on every AI aircraft (not only craft with the part-menu toggle on)
         public static float TheatreSpawnKm = 150f;      // AI flights materialise inside this slant range (atmospheric craft only)
         public static bool RadarTerrainMask = true;     // ELE sensor engine: radars can't see through hills at any range
+        public static bool KrakenGuard = true;          // gentle unpack, stiffer solver, runaway-energy watchdog
+        public static bool KrakenWatchdog = true;
+        public static bool Profiler = false;            // ELE performance profiler window
+        public static bool PhysicsLOD = true;           // full physics near / engaged, rigid on rails further, unloaded ghosts beyond
+        public static float LODUnpackKm = 8f, LODLoadKm = 30f, LODMarkerKm = 400f;
+        public static bool LODMarkers = true;
         public static bool DynamicDamage = true;        // dents, scorch marks and bent parts from hits
         public static float DamageIntensity = 1f;
         public static bool VaporCones = true;           // transonic vapor cones + shock ring at Mach 1 (volumetric)
@@ -216,6 +222,13 @@ namespace BDArmory.Avionics
                 Volumetric = GetBool(node, "Volumetric", Volumetric);
                 VaporCones = GetBool(node, "VaporCones", VaporCones);
                 DynamicDamage = GetBool(node, "DynamicDamage", DynamicDamage);
+                KrakenGuard = GetBool(node, "KrakenGuard", KrakenGuard);
+                KrakenWatchdog = GetBool(node, "KrakenWatchdog", KrakenWatchdog);
+                PhysicsLOD = GetBool(node, "PhysicsLOD", PhysicsLOD);
+                LODMarkers = GetBool(node, "LODMarkers", LODMarkers);
+                LODUnpackKm = Mathf.Clamp(GetFloat(node, "LODUnpackKm", LODUnpackKm), 2.5f, 50f);
+                LODLoadKm = Mathf.Clamp(GetFloat(node, "LODLoadKm", LODLoadKm), 5f, 150f);
+                LODMarkerKm = Mathf.Clamp(GetFloat(node, "LODMarkerKm", LODMarkerKm), 10f, 3000f);
                 if (float.TryParse(node.GetValue("DamageIntensity"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var di)) DamageIntensity = di;
                 RadarTerrainMask = GetBool(node, "RadarTerrainMask", RadarTerrainMask);
                 TheatreSpawnKm = Mathf.Clamp(GetFloat(node, "TheatreSpawnKm", TheatreSpawnKm), 20f, 200f);
@@ -319,6 +332,13 @@ namespace BDArmory.Avionics
                 node.AddValue("Volumetric", Volumetric);
                 node.AddValue("VaporCones", VaporCones);
                 node.AddValue("DynamicDamage", DynamicDamage);
+                node.AddValue("KrakenGuard", KrakenGuard);
+                node.AddValue("KrakenWatchdog", KrakenWatchdog);
+                node.AddValue("PhysicsLOD", PhysicsLOD);
+                node.AddValue("LODMarkers", LODMarkers);
+                node.AddValue("LODUnpackKm", LODUnpackKm);
+                node.AddValue("LODLoadKm", LODLoadKm);
+                node.AddValue("LODMarkerKm", LODMarkerKm);
                 node.AddValue("DamageIntensity", DamageIntensity.ToString(System.Globalization.CultureInfo.InvariantCulture));
                 node.AddValue("RadarTerrainMask", RadarTerrainMask);
                 node.AddValue("TheatreSpawnKm", TheatreSpawnKm);
