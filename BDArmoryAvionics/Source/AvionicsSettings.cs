@@ -109,7 +109,7 @@ namespace BDArmory.Avionics
         public static bool KrakenWatchdog = true;
         public static bool Profiler = false;            // ELE performance profiler window
         public static bool PhysicsLOD = true;           // full physics near / engaged, rigid on rails further, unloaded ghosts beyond
-        public static float LODUnpackKm = 8f, LODLoadKm = 30f, LODMarkerKm = 400f;
+        public static float LODUnpackKm = 8f, LODLoadKm = 30f, LODMarkerKm = 800f;
         public static bool LODMarkers = true;
         public static bool DynamicDamage = true;        // dents, scorch marks and bent parts from hits
         public static float DamageIntensity = 1f;

@@ -24,7 +24,8 @@ namespace BDArmory.Avionics
         public static PhysicsLOD Instance;
         public static int Full, Rigid, Ghost;
 
-        class Track { public double lat, lon, alt, agl; public float heading, speed; public bool lowLevel; public double lastUT; public bool init; }
+        // mode: 0 straight, 1 fly to a point (then orbit it), 2 orbit (CAP / patrol)
+        class Track { public double lat, lon, alt, agl, tLat, tLon; public float heading, speed, radius = 6000f; public int mode; public bool lowLevel; public double lastUT; public bool init; }
         readonly Dictionary<Guid, Track> tracks = new();
         readonly HashSet<Guid> loadGranted = new(), unpackGranted = new();
         float nextRanges, nextGhost, grantWindow; int grantsThisWindow, unpacksThisWindow;
@@ -139,7 +140,54 @@ namespace BDArmory.Avionics
                 heading = heading, speed = (float)Math.Max(hor.magnitude, 60), lastUT = ut, init = true,
             };
             t.lowLevel = t.agl < 600;
+            // follow the AI's orders: fly-to / attack a point, or hold the area (CAP) when it has none
+            t.tLat = t.lat; t.tLon = t.lon;
+            try
+            {
+                if (v.loaded)
+                {
+                    var ai = v.ActiveController().AI;
+                    if (ai != null && ai.pilotEnabled)
+                    {
+                        if (ai.currentCommand == PilotCommands.FlyTo || ai.currentCommand == PilotCommands.Attack) { t.mode = 1; t.tLat = ai.commandGPS.x; t.tLon = ai.commandGPS.y; }
+                        else t.mode = 2;
+                    }
+                }
+                else if (v.protoVessel != null)
+                    foreach (var pp in v.protoVessel.protoPartSnapshots) foreach (var m in pp.modules) if (m.moduleName == "BDModulePilotAI") { t.mode = 2; break; }
+            }
+            catch { }
             return t;
+        }
+
+        static double Bearing(double la1, double lo1, double la2, double lo2)
+        {
+            double f1 = la1 * Math.PI / 180, f2 = la2 * Math.PI / 180, dl = (lo2 - lo1) * Math.PI / 180;
+            return Math.Atan2(Math.Sin(dl) * Math.Cos(f2), Math.Cos(f1) * Math.Sin(f2) - Math.Sin(f1) * Math.Cos(f2) * Math.Cos(dl)) * 180 / Math.PI;
+        }
+
+        static double Distance(CelestialBody b, double la1, double lo1, double la2, double lo2)
+        {
+            double f1 = la1 * Math.PI / 180, f2 = la2 * Math.PI / 180, dl = (lo2 - lo1) * Math.PI / 180;
+            return b.Radius * Math.Acos(Math.Max(-1, Math.Min(1, Math.Sin(f1) * Math.Sin(f2) + Math.Cos(f1) * Math.Cos(f2) * Math.Cos(dl))));
+        }
+
+        /// <summary>Heading for the mode: toward the target, or round the patrol circle (turning at most 3 deg/s).</summary>
+        static void Steer(CelestialBody b, Track t, float dt)
+        {
+            if (t.mode == 0) return;
+            double d = Distance(b, t.lat, t.lon, t.tLat, t.tLon);
+            if (t.mode == 1 && d < 3000) t.mode = 2;                                   // arrived: hold the area
+            double want;
+            if (t.mode == 1) want = Bearing(t.lat, t.lon, t.tLat, t.tLon);
+            else
+            {
+                double fromCentre = Bearing(t.tLat, t.tLon, t.lat, t.lon);
+                double correction = Math.Max(-60, Math.Min(60, (d - t.radius) / t.radius * 60));
+                want = d < 100 ? t.heading : fromCentre + 90 + correction;           // clockwise, pulled back onto the circle
+            }
+            float err = Mathf.DeltaAngle(t.heading, (float)want);
+            t.heading = Mathf.Repeat(t.heading + Mathf.Clamp(err, -3f * dt, 3f * dt), 360f);
         }
 
         static void Step(Vessel v, Track t, double ut, bool rigid)
@@ -147,6 +195,7 @@ namespace BDArmory.Avionics
             var b = v.mainBody;
             double dt = Math.Min(ut - t.lastUT, 5); t.lastUT = ut;
             if (dt <= 0) return;
+            Steer(b, t, (float)dt);
             double R = b.Radius + t.alt, h = t.heading * Math.PI / 180;
             t.lat += Math.Cos(h) * t.speed * dt / R * 180 / Math.PI;
             t.lon += Math.Sin(h) * t.speed * dt / (R * Math.Max(0.05, Math.Cos(t.lat * Math.PI / 180))) * 180 / Math.PI;
