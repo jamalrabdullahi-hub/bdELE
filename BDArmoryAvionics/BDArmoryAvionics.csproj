@@ -32,6 +32,7 @@
     <Reference Include="UnityEngine.UIModule"><HintPath>$(KSPRefs)\UnityEngine.UIModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.AnimationModule"><HintPath>$(KSPRefs)\UnityEngine.AnimationModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="KSPAssets"><HintPath>$(KSPRefs)\KSPAssets.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.ScreenCaptureModule"><HintPath>$(KSPRefs)\UnityEngine.ScreenCaptureModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="BDArmory"><HintPath>$(BDARefs)\BDArmory.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="0Harmony"><HintPath>$(BDARefs)\0Harmony.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
