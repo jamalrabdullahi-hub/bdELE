@@ -26,11 +26,14 @@ namespace BDArmory.Avionics
         int sel, selPt = -1;
         bool mirror = true, allSections, snap = true;
         float snapStep = 0.05f;
-        int preset;
+        int preset, tab, stockIdx;
+        string libName = "My shape";
+        Vector2 libScroll;
+        static readonly string[] Tabs = { "Shape", "Ends & nodes", "Canopy & seats", "Library" };
         readonly List<string> undo = new(), redo = new();
 
         // drag state
-        enum Grab { None, Point, Centre }
+        enum Grab { None, Point, Centre, Node, Seat }
         Grab grab; int grabSec, grabPt; bool grabSide; Vector2 grabStart; Vector3 grabAnchor; float grabY0; Vector2 grabOff0;
         List<Vector2>[] grabPts0;
         bool locked;
@@ -120,6 +123,151 @@ namespace BDArmory.Avionics
             for (int i = 0; i < s.pts.Count; i++) s.pts[i] = new Vector2(s.pts[i].x * kx, s.pts[i].y * ky);
         }
 
+        void OtherTab(ref float yRef, float x, float w, float hw, float tw, ModuleELEShape.Section s)
+        {
+            float y = yRef;
+            try { OtherTabBody(ref y, x, w, hw, tw, s); } finally { yRef = y; }
+        }
+
+        void OtherTabBody(ref float yOut, float x, float w, float hw, float tw, ModuleELEShape.Section s)
+        {
+            float y = yOut;
+            var btn = BDArmorySetup.ButtonStyle; var on = BDArmorySetup.SelectedButtonStyle; var small = AvionicsDraw.LabelSmall;
+            var secs = Target.sections;
+            void Head(string t) { AvionicsDraw.ColorLabel(new Rect(x, y, w, 14), t, AvionicsDraw.Header, AvionicsDraw.HudText); y += 16; }
+            void Note(string t) { AvionicsDraw.ColorLabel(new Rect(x, y, w, 14), t, small, AvionicsDraw.ScopeText); y += 14; }
+            float Slide(string label, float v, float min, float max) { GUI.Label(new Rect(x, y, w, 16), label, small); y += 15; v = GUI.HorizontalSlider(new Rect(x, y, w, 14), v, min, max); y += 18; return v; }
+            if (tab == 1)
+            {
+                Head("STOCK PROFILE FOR AN END");
+                if (GUI.Button(new Rect(x, y, w, 20), $"<  {ShapeLibrary.Stock[stockIdx].label}  >", btn)) stockIdx = (stockIdx + 1) % ShapeLibrary.Stock.Length;
+                y += 22;
+                if (GUI.Button(new Rect(x, y, tw, 20), "Front end", btn)) StockEnd(secs.Count - 1);
+                if (GUI.Button(new Rect(x + tw + 4, y, tw, 20), "Rear end", btn)) StockEnd(0);
+                if (GUI.Button(new Rect(x + 2 * (tw + 4), y, tw, 20), "Selected", btn)) StockEnd(sel);
+                y += 24;
+                Note("Measured from the stock parts, so they meet flush.");
+                y += 4;
+                Head("SNAP POINTS (green: drag them in the scene)");
+                for (int e = 1; e >= 0; e--)
+                {
+                    string nm = e == 1 ? "Front" : "Rear";
+                    int size = e == 1 ? Target.nodeTopSize : Target.nodeBottomSize;
+                    var off = e == 1 ? Target.nodeTopOffset : Target.nodeBottomOffset;
+                    GUI.Label(new Rect(x, y, 140, 20), $"{nm}: size {size}, out {off.z:0.00} m", small);
+                    if (GUI.Button(new Rect(x + w - 150, y, 36, 18), "−", btn)) { Push(); SetNodeSize(e, Mathf.Max(0, size - 1)); }
+                    if (GUI.Button(new Rect(x + w - 112, y, 36, 18), "+", btn)) { Push(); SetNodeSize(e, Mathf.Min(4, size + 1)); }
+                    if (GUI.Button(new Rect(x + w - 74, y, 36, 18), "in", btn)) { Push(); Shift(e, -0.05f); }
+                    if (GUI.Button(new Rect(x + w - 36, y, 36, 18), "out", btn)) { Push(); Shift(e, 0.05f); }
+                    y += 22;
+                }
+                if (GUI.Button(new Rect(x, y, w, 20), "Centre both snap points", btn)) { Push(); Target.nodeTopOffset = Target.nodeBottomOffset = Vector3.zero; Commit(); }
+                y += 24;
+                Head("SURFACE ATTACH POINT");
+                var sn = Target.surfaceNode;
+                float a = Slide($"Along {sn.y:0.00} m", sn.y, secs[0].y, secs[secs.Count - 1].y);
+                float u = Slide($"Up from the underside {sn.z:0.00} m", sn.z, 0, 2f);
+                if (Mathf.Abs(a - sn.y) > 0.005f || Mathf.Abs(u - sn.z) > 0.005f) { Target.surfaceNode = new Vector3(0, Mathf.Round(a * 100) / 100, Mathf.Round(u * 100) / 100); Commit(); }
+            }
+            else if (tab == 2)
+            {
+                Head("CANOPY GLASS BAND");
+                bool c = GUI.Toggle(new Rect(x, y, w, 20), Target.canopy, Target.canopy ? "Canopy glass ON" : "Canopy glass off", Target.canopy ? on : btn);
+                if (c != Target.canopy) { Push(); Target.canopy = c; Commit(); }
+                y += 24;
+                if (Target.canopy)
+                {
+                    float lo = secs[0].y, hi = secs[secs.Count - 1].y;
+                    float f = Slide($"From {Target.canopyFrom:0.00} m", Target.canopyFrom, lo, hi);
+                    float t = Slide($"To {Target.canopyTo:0.00} m", Target.canopyTo, lo, hi);
+                    float ab = Slide($"Above {Target.canopyAbove:0.00} m from the centre line", Target.canopyAbove, -1.5f, 1.5f);
+                    if (Mathf.Abs(f - Target.canopyFrom) > 0.004f || Mathf.Abs(t - Target.canopyTo) > 0.004f || Mathf.Abs(ab - Target.canopyAbove) > 0.004f)
+                    { Target.canopyFrom = Mathf.Min(f, t - 0.05f); Target.canopyTo = Mathf.Max(t, f + 0.05f); Target.canopyAbove = ab; Commit(); }
+                    Note("Tip: raise the sections over the canopy for a bubble.");
+                }
+                y += 4;
+                Head("CREW SEATS (pink: drag the heads in the scene)");
+                if (Target.part.CrewCapacity <= 0) Note("This is the plain ELE Shape: use ELE Shape Cockpit for crew.");
+                else
+                {
+                    float al = Slide($"Pilot along {Target.seatAlong:0.00} m", Target.seatAlong, secs[0].y, secs[secs.Count - 1].y);
+                    float up = Slide($"Seat height {Target.seatUp:0.00} m", Target.seatUp, -1.5f, 1f);
+                    if (Mathf.Abs(al - Target.seatAlong) > 0.004f || Mathf.Abs(up - Target.seatUp) > 0.004f) { Target.seatAlong = al; Target.seatUp = up; Target.Propagate(); }
+                    string mode = Target.seatSpacing > 0.05f ? "Tandem" : Target.seatSpacing < -0.05f ? "Side by side" : "Single seat";
+                    if (GUI.Button(new Rect(x, y, w, 20), $"Layout: {mode}", btn)) { Target.seatSpacing = Target.seatSpacing > 0.05f ? -0.8f : Target.seatSpacing < -0.05f ? 0 : 1.1f; Target.Propagate(); }
+                    y += 22;
+                    if (Mathf.Abs(Target.seatSpacing) > 0.05f)
+                    {
+                        float spv = Slide($"Spacing {Mathf.Abs(Target.seatSpacing):0.00} m", Mathf.Abs(Target.seatSpacing), 0.5f, 2.5f);
+                        if (Mathf.Abs(spv - Mathf.Abs(Target.seatSpacing)) > 0.004f) { Target.seatSpacing = Mathf.Sign(Target.seatSpacing) * spv; Target.Propagate(); }
+                    }
+                    Note("Head must stay inside the skin / under the glass.");
+                }
+            }
+            else
+            {
+                Head("SAVE");
+                libName = GUI.TextField(new Rect(x, y, w, 20), libName); y += 22;
+                if (GUI.Button(new Rect(x, y, hw, 20), "Save whole shape", btn)) ShapeLibrary.SaveShape(Target, libName);
+                if (GUI.Button(new Rect(x + hw + 4, y, hw, 20), "Save this section", btn)) ShapeLibrary.SaveSection(s, libName);
+                y += 24;
+                Head("LOAD SHAPE (onto this part)");
+                var shapes = ShapeLibrary.List("shape").ToList();
+                var secsL = ShapeLibrary.List("section").ToList();
+                float lh = Mathf.Min(150, (shapes.Count + secsL.Count + 1) * 21 + 20);
+                var view = new Rect(x, y, w, lh);
+                libScroll = GUI.BeginScrollView(view, libScroll, new Rect(0, 0, w - 16, (shapes.Count + secsL.Count + 1) * 21 + 20));
+                float ly = 0;
+                if (shapes.Count == 0) { GUI.Label(new Rect(0, ly, w - 18, 20), "(no saved shapes yet)", small); ly += 21; }
+                foreach (var n in shapes)
+                {
+                    if (GUI.Button(new Rect(0, ly, w - 80, 20), n, btn)) { Push(); ShapeLibrary.LoadShape(Target, n); sel = 0; selPt = -1; }
+                    if (GUI.Button(new Rect(w - 76, ly, 56, 20), "name", btn)) libName = n;
+                    ly += 21;
+                }
+                GUI.Label(new Rect(0, ly, w - 18, 20), "Sections (onto the selected section, same size):", small); ly += 20;
+                foreach (var n in secsL)
+                {
+                    if (GUI.Button(new Rect(0, ly, w - 80, 20), n, btn)) { Push(); if (ShapeLibrary.LoadSection(s, n, true)) { MatchCount(s); Commit(); } }
+                    if (GUI.Button(new Rect(w - 76, ly, 56, 20), "all", btn)) { Push(); foreach (var o in secs) ShapeLibrary.LoadSection(o, n, true); Commit(); }
+                    ly += 21;
+                }
+                GUI.EndScrollView();
+                y += lh + 4;
+                if (GUI.Button(new Rect(x, y, w, 20), "Open shapes folder", btn)) { System.IO.Directory.CreateDirectory(ShapeLibrary.Folder); Application.OpenURL("file:///" + ShapeLibrary.Folder.Replace('\\', '/')); }
+                y += 24;
+                Note("Saved shapes load onto any ELE Shape or Shape Cockpit.");
+            }
+            yOut = y;
+        }
+
+        void StockEnd(int i)
+        {
+            Push();
+            var sc = Target.sections[i];
+            if (!ShapeLibrary.ApplyStock(sc, stockIdx, out int size)) { undo.RemoveAt(undo.Count - 1); return; }
+            if (i == 0) Target.nodeBottomSize = size; if (i == Target.sections.Count - 1) Target.nodeTopSize = size;
+            Commit();
+        }
+
+        void SetNodeSize(int e, int size) { if (e == 1) Target.nodeTopSize = size; else Target.nodeBottomSize = size; Commit(); }
+        void Shift(int e, float d) { if (e == 1) Target.nodeTopOffset += new Vector3(0, 0, d); else Target.nodeBottomOffset += new Vector3(0, 0, d); Commit(); }
+
+        /// <summary>A loaded section may come with another point count: give every section the same count (resample the others).</summary>
+        void MatchCount(ModuleELEShape.Section s)
+        {
+            int n = s.pts.Count;
+            foreach (var o in Target.sections)
+            {
+                if (o == s || o.pts.Count == n) continue;
+                var (ow, oh) = Size(o);
+                var c = s.Clone(); c.y = o.y; c.offset = o.offset; c.hard = o.hard;
+                var (cw, ch) = Size(c);
+                for (int i = 0; i < n; i++) c.pts[i] = new Vector2(c.pts[i].x * (cw > 0.01f ? ow / cw : 1), c.pts[i].y * (ch > 0.01f ? oh / ch : 1));
+                o.pts = c.pts; o.sharp = c.sharp;
+            }
+        }
+
         static (float w, float h) Size(ModuleELEShape.Section s) => (s.pts.Max(p => p.x) - s.pts.Min(p => p.x), s.pts.Max(p => p.y) - s.pts.Min(p => p.y));
 
         // ---------------- input ----------------
@@ -160,6 +308,20 @@ namespace BDArmory.Avionics
                         if (p.z > 0 && d < best - (s == sel ? 2 : 0)) { best = d; hov = Grab.Point; hs = s; hp = i; }
                     }
                 }
+            if (!overWindow && grab == Grab.None && tab != 0)
+            {
+                for (int e = 0; e < 2; e++)
+                {
+                    var np = Screen(cam, tr.TransformPoint(NodePos(e)));
+                    float d = (np.xy() - mouse).magnitude; if (np.z > 0 && d < best + 3) { best = d; hov = Grab.Node; hs = e; hp = -1; }
+                }
+                var seatsW = SeatPositions();
+                for (int i = 0; i < seatsW.Count; i++)
+                {
+                    var sp2 = Screen(cam, tr.TransformPoint(seatsW[i] + new Vector3(0, 0, -0.75f)));   // drag by the head
+                    float d = (sp2.xy() - mouse).magnitude; if (sp2.z > 0 && d < best + 4) { best = d; hov = Grab.Seat; hs = i; hp = -1; }
+                }
+            }
             SetLock(overWindow || hov != Grab.None || grab != Grab.None);
 
             // wheel over a section square: size it
@@ -176,12 +338,17 @@ namespace BDArmory.Avionics
             if (Input.GetMouseButtonDown(0) && hov != Grab.None)
             {
                 Push();
-                grab = hov; grabSec = hs; grabPt = hp; sel = hs; if (hov == Grab.Point) selPt = hp;
+                grab = hov; grabSec = hs; grabPt = hp;
+                if (hov == Grab.Node || hov == Grab.Seat) { grabStart = mouse; grabPts0 = new List<Vector2>[0]; }
+                else
+                {
+                sel = hs; if (hov == Grab.Point) selPt = hp;
                 var sec = Target.sections[hs];
                 grabSide = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
                 grabStart = mouse; grabY0 = sec.y; grabOff0 = sec.offset;
                 grabAnchor = tr.TransformPoint(ModuleELEShape.Local(sec, hov == Grab.Point ? sec.pts[hp] : Vector2.zero));
                 grabPts0 = Target.sections.Select(s => new List<Vector2>(s.pts)).ToArray();
+                }
             }
             if (grab != Grab.None && Input.GetMouseButton(0)) Drag(cam, tr);
             if (grab != Grab.None && !Input.GetMouseButton(0))
@@ -197,6 +364,27 @@ namespace BDArmory.Avionics
         void Drag(Camera cam, Transform tr)
         {
             var ray = cam.ScreenPointToRay(Input.mousePosition);
+            if (grab == Grab.Node)
+            {
+                var end = grabSec == 0 ? Target.sections[0] : Target.sections[Target.sections.Count - 1];
+                var plane = new Plane(tr.up, tr.TransformPoint(new Vector3(0, end.y, 0)));
+                if (!plane.Raycast(ray, out float nd)) return;
+                var l = tr.InverseTransformPoint(ray.GetPoint(nd));
+                var q = Snap(new Vector2(l.x, -l.z) - end.offset); if (mirror) q.x = 0;
+                if (grabSec == 0) Target.nodeBottomOffset = new Vector3(q.x, q.y, Target.nodeBottomOffset.z); else Target.nodeTopOffset = new Vector3(q.x, q.y, Target.nodeTopOffset.z);
+                Target.Rebuild(true); return;
+            }
+            if (grab == Grab.Seat)
+            {
+                // in the side plane through the centre line
+                var plane = new Plane(tr.right, tr.position);
+                if (!plane.Raycast(ray, out float sd)) return;
+                var l = tr.InverseTransformPoint(ray.GetPoint(sd));
+                float along = snap ? Mathf.Round(l.y / snapStep) * snapStep : l.y, headUp = -l.z;
+                if (grabSec == 0) { Target.seatAlong = along; Target.seatUp = (snap ? Mathf.Round(headUp / snapStep) * snapStep : headUp) - 0.75f; }
+                else if (Target.seatSpacing > 0.05f) Target.seatSpacing = Mathf.Max(0.6f, Target.seatAlong - along);
+                return;
+            }
             var sec = Target.sections[grabSec];
             if (grab == Grab.Centre && !grabSide)
             {
@@ -228,6 +416,25 @@ namespace BDArmory.Avionics
                 }
             }
             Target.Rebuild(true);
+        }
+
+        /// <summary>Attach node position (part-local): 0 rear, 1 front.</summary>
+        Vector3 NodePos(int e)
+        {
+            var end = e == 0 ? Target.sections[0] : Target.sections[Target.sections.Count - 1];
+            var o = e == 0 ? Target.nodeBottomOffset : Target.nodeTopOffset;
+            return new Vector3(end.offset.x + o.x, end.y + (e == 0 ? -o.z : o.z), -(end.offset.y + o.y));
+        }
+
+        /// <summary>Seat pans (part-local) as the cockpit IVA will place them.</summary>
+        List<Vector3> SeatPositions()
+        {
+            var l = new List<Vector3>();
+            if (Target.part.CrewCapacity <= 0) return l;
+            float a = Target.seatAlong, u = Target.seatUp, sp = Target.seatSpacing;
+            l.Add(new Vector3(sp < -0.05f ? sp / 2 : 0, a, -u));
+            if (Target.part.CrewCapacity > 1) { if (sp > 0.05f) l.Add(new Vector3(0, a - sp, -u)); else if (sp < -0.05f) l.Add(new Vector3(-sp / 2, a, -u)); }
+            return l;
         }
 
         void SetLock(bool on)
@@ -276,6 +483,33 @@ namespace BDArmory.Avionics
                 var ctr = Screen(cam, tr.TransformPoint(ModuleELEShape.Local(sec, Vector2.zero)));
                 if (ctr.z > 0) { AvionicsDraw.Box(ctr.xy(), on ? 8 : 6, 2, on ? Sel : Axis); if (sec.hard) AvionicsDraw.Box(ctr.xy(), 3, 3, Sharp); }
             }
+            if (tab != 0)
+            {
+                var green = new Color(0.4f, 1f, 0.45f);
+                for (int e = 0; e < 2; e++)
+                {
+                    var np = Screen(cam, tr.TransformPoint(NodePos(e)));
+                    var tip = Screen(cam, tr.TransformPoint(NodePos(e) + (e == 0 ? Vector3.down : Vector3.up) * 0.3f));
+                    if (np.z > 0) { AvionicsDraw.Diamond(np.xy(), 9, 2, green); if (tip.z > 0) AvionicsDraw.Line(np.xy(), tip.xy(), 2, green); }
+                }
+                if (Target.part.srfAttachNode != null)
+                {
+                    var sp3 = Screen(cam, tr.TransformPoint(Target.part.srfAttachNode.position));
+                    if (sp3.z > 0) AvionicsDraw.Diamond(sp3.xy(), 6, 2, new Color(0.4f, 1f, 0.45f, 0.6f));
+                }
+                // seated crew: pan, back, head (a kerbal sits about 0.9 m tall)
+                foreach (var seat in SeatPositions())
+                {
+                    var pan = Screen(cam, tr.TransformPoint(seat));
+                    var head = Screen(cam, tr.TransformPoint(seat + new Vector3(0, 0, -0.75f)));
+                    var knee = Screen(cam, tr.TransformPoint(seat + new Vector3(0, 0.45f, 0)));
+                    var foot = Screen(cam, tr.TransformPoint(seat + new Vector3(0, 0.55f, 0.4f)));
+                    if (pan.z <= 0 || head.z <= 0) continue;
+                    var c = new Color(1f, 0.6f, 0.9f);
+                    AvionicsDraw.Line(pan.xy(), head.xy(), 3, c); AvionicsDraw.Line(pan.xy(), knee.xy(), 3, c); if (foot.z > 0) AvionicsDraw.Line(knee.xy(), foot.xy(), 3, c);
+                    AvionicsDraw.Box(head.xy(), 9, 2, c);
+                }
+            }
             AvionicsDraw.End();
         }
 
@@ -294,7 +528,11 @@ namespace BDArmory.Avionics
             if (mirror && N % 2 == 1) { AvionicsDraw.ColorLabel(new Rect(x, y, w, 14), "Odd point count: add a point to mirror exactly", small, AvionicsDraw.Unknown); y += 14; }
             if (GUI.Button(new Rect(x, y, hw, 20), $"Undo ({undo.Count})", btn)) Undo();
             if (GUI.Button(new Rect(x + hw + 4, y, hw, 20), $"Redo ({redo.Count})", btn)) Redo();
-            y += 26;
+            y += 24;
+            float tbw = (w - 6) / 2;
+            for (int i = 0; i < Tabs.Length; i++) if (GUI.Toggle(new Rect(x + (i % 2) * (tbw + 6), y + (i / 2) * 22, tbw, 20), tab == i, Tabs[i], tab == i ? on : btn)) tab = i;
+            y += 48;
+            if (tab != 0) { OtherTab(ref y, x, w, hw, tw, s); rect.height = y + 6; GUI.DragWindow(); return; }
 
             // sections
             AvionicsDraw.ColorLabel(new Rect(x, y, w, 14), $"SECTIONS ({secs.Count})  front = top of list", AvionicsDraw.Header, AvionicsDraw.HudText); y += 16;

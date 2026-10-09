@@ -48,8 +48,22 @@ namespace BDArmory.Avionics
          UI_ChooseOption(options = new[] { "None", "LiquidFuel", "LFO", "MonoPropellant" }, display = new[] { "Empty", "Liquid fuel", "Fuel + oxidiser", "Monoprop" }, scene = UI_Scene.Editor)]
         public string tank = "None";
 
+        [KSPField(isPersistant = true, guiActiveEditor = true, guiName = "Body lift", groupName = "eleshape"),
+         UI_FloatRange(minValue = 0, maxValue = 2, stepIncrement = 0.1f, scene = UI_Scene.Editor)]
+        public float bodyLift = 1f;          // x the lift this shape's flatness gives (Mk2-style lifting bodies)
+
         [KSPField(guiActiveEditor = true, guiActive = true, guiName = "Shape", groupName = "eleshape")]
         public string info = "";
+
+        // Snap points (edited in the shape editor): offset from the end section's centre (x, up, along) and node size
+        [KSPField(isPersistant = true)] public Vector3 nodeTopOffset = Vector3.zero, nodeBottomOffset = Vector3.zero;
+        [KSPField(isPersistant = true)] public int nodeTopSize = 1, nodeBottomSize = 1;
+        [KSPField(isPersistant = true)] public Vector3 surfaceNode = Vector3.zero;   // surface-attach point: x, along, up (from the underside)
+        // Canopy band: skin between canopyFrom..canopyTo (along) and above canopyAbove (up, from the section centre) is glass
+        [KSPField(isPersistant = true)] public bool canopy = false;
+        [KSPField(isPersistant = true)] public float canopyFrom = 0.2f, canopyTo = 1.0f, canopyAbove = 0.15f;
+        // Cockpit (crewed variant): pilot seat position along / up, second seat this far behind (0 = one seat)
+        [KSPField(isPersistant = true)] public float seatAlong = 0.3f, seatUp = -0.35f, seatSpacing = 1.1f;
 
         public static readonly Dictionary<string, Color> Paints = new()
         {
@@ -69,7 +83,7 @@ namespace BDArmory.Avionics
         public override void OnStart(StartState state)
         {
             meshT = part.FindModelTransform(meshName);
-            foreach (var f in new[] { nameof(role), nameof(paint), nameof(smoothing), nameof(spanSegments), nameof(tank) })
+            foreach (var f in new[] { nameof(role), nameof(paint), nameof(smoothing), nameof(spanSegments), nameof(tank), nameof(bodyLift) })
             {
                 var c = Fields[f].uiControlEditor; if (c != null) c.onFieldChanged = (a, b) => { Rebuild(false); Propagate(); };
             }
@@ -194,7 +208,7 @@ namespace BDArmory.Avionics
 
             var rings = Rings(true);
             int n = rings[0].Length;
-            var v = new List<Vector3>(); var uv = new List<Vector2>(); var tri = new List<int>();
+            var v = new List<Vector3>(); var uv = new List<Vector2>(); var tri = new List<int>(); var glass = new List<int>();
             bool atlas = role != "glass" && role != "accent";
             var rect = StockSkin.RectFor(role);
             float tile = role == "skin" ? 1.4f : 0.7f, tileH = tile * rect.height / rect.width;
@@ -221,7 +235,7 @@ namespace BDArmory.Avionics
                         uv.Add(new Vector2(rect.x + u0 * rect.width, rect.y + v1 * rect.height)); uv.Add(new Vector2(rect.x + u1 * rect.width, rect.y + v1 * rect.height));
                     }
                     else { uv.Add(Vector2.zero); uv.Add(Vector2.right); uv.Add(Vector2.up); uv.Add(Vector2.one); }
-                    tri.AddRange(new[] { k, k + 2, k + 1, k + 1, k + 2, k + 3 });
+                    (InCanopy((A[i] + A[j] + B[i] + B[j]) / 4) ? glass : tri).AddRange(new[] { k, k + 2, k + 1, k + 1, k + 2, k + 3 });
                     area += Vector3.Cross(A[j] - A[i], B[i] - A[i]).magnitude * 0.5f + Vector3.Cross(B[j] - A[j], B[i] - A[j]).magnitude * 0.5f;
                 }
             }
@@ -238,16 +252,16 @@ namespace BDArmory.Avionics
 
             // outward faces: signed volume of the closed skin must be positive
             volume = 0;
-            for (int i = 0; i < tri.Count; i += 3) volume += Vector3.Dot(v[tri[i]], Vector3.Cross(v[tri[i + 1]], v[tri[i + 2]])) / 6f;
-            if (volume < 0) { for (int i = 0; i < tri.Count; i += 3) (tri[i + 1], tri[i + 2]) = (tri[i + 2], tri[i + 1]); volume = -volume; }
+            foreach (var l in new[] { tri, glass }) for (int i = 0; i < l.Count; i += 3) volume += Vector3.Dot(v[l[i]], Vector3.Cross(v[l[i + 1]], v[l[i + 2]])) / 6f;
+            if (volume < 0) { foreach (var l in new[] { tri, glass }) for (int i = 0; i < l.Count; i += 3) (l[i + 1], l[i + 2]) = (l[i + 2], l[i + 1]); volume = -volume; }
 
             if (mesh == null) mesh = new Mesh { name = "ELEShape" };
-            mesh.Clear(); mesh.SetVertices(v); mesh.SetUVs(0, uv); mesh.SetTriangles(tri, 0);
+            mesh.Clear(); mesh.SetVertices(v); mesh.SetUVs(0, uv); mesh.subMeshCount = 2; mesh.SetTriangles(tri, 0); mesh.SetTriangles(glass, 1);
             mesh.RecalculateNormals(); SmoothNormals(mesh); mesh.RecalculateBounds(); mesh.RecalculateTangents();
             meshT.localScale = Vector3.one; meshT.localPosition = Vector3.zero; meshT.localRotation = Quaternion.identity;
             var mf = meshT.GetComponent<MeshFilter>(); if (mf != null) mf.sharedMesh = mesh;
             var mr = meshT.GetComponent<MeshRenderer>();
-            if (mr != null) mr.sharedMaterial = StockSkin.Mat(role, Paints.TryGetValue(paint, out var col) ? col : Color.white);
+            if (mr != null) mr.sharedMaterials = new[] { StockSkin.Mat(role, Paints.TryGetValue(paint, out var col) ? col : Color.white), StockSkin.Mat("glass", Color.white) };
 
             // collider: the unsmoothed hull (few points, cheap and convex)
             var hr = Rings(false);
@@ -263,13 +277,26 @@ namespace BDArmory.Avionics
 
             // nodes on the end sections
             var s0 = sections[0]; var s1 = sections[sections.Count - 1];
-            SetNode("bottom", new Vector3(s0.offset.x, s0.y, -s0.offset.y), Vector3.down, moveChildren);
-            SetNode("top", new Vector3(s1.offset.x, s1.y, -s1.offset.y), Vector3.up, moveChildren);
+            SetNode("bottom", new Vector3(s0.offset.x + nodeBottomOffset.x, s0.y - nodeBottomOffset.z, -(s0.offset.y + nodeBottomOffset.y)), Vector3.down, nodeBottomSize, moveChildren);
+            SetNode("top", new Vector3(s1.offset.x + nodeTopOffset.x, s1.y + nodeTopOffset.z, -(s1.offset.y + nodeTopOffset.y)), Vector3.up, nodeTopSize, moveChildren);
+            if (part.srfAttachNode != null)
+            {
+                // surface attach point: on the underside of the skin, adjustable
+                var mid = SectionAt(surfaceNode.y);
+                float under = mid != null ? -(mid.pts.Min(q => q.y) + mid.offset.y) : 0.5f;
+                part.srfAttachNode.position = part.srfAttachNode.originalPosition = new Vector3(surfaceNode.x, surfaceNode.y, under - surfaceNode.z);
+                part.srfAttachNode.orientation = part.srfAttachNode.originalOrientation = Vector3.forward;
+            }
+            // lifting body: flatter (wider than tall) shapes give more of KSP's body lift
+            float flat = 0, wsum = 0;
+            foreach (var sc in sections) { float sw = sc.pts.Max(q => q.x) - sc.pts.Min(q => q.x), sh = sc.pts.Max(q => q.y) - sc.pts.Min(q => q.y); if (sh > 0.01f) { flat += sw / sh * sw; wsum += sw; } }
+            float flatness = wsum > 0 ? flat / wsum : 1;
+            part.bodyLiftMultiplier = bodyLift * Mathf.Clamp(0.4f + (flatness - 1) * 1.1f, 0.2f, 3f);
 
             UpdateTank();
             if (part.DragCubes != null) { part.DragCubes.Procedural = true; if (HighLogic.LoadedSceneIsFlight) part.DragCubes.ForceUpdate(true, true, true); }
             float len = s1.y - s0.y;
-            info = $"{len:F2} m long, {sections.Count} sections × {s0.pts.Count} pts, {area:F1} m², {volume:F2} m³, {Mathf.Max(0.005f, area * skinDensity):F2} t";
+            info = $"lift x{part.bodyLiftMultiplier:0.0}, {len:F2} m long, {sections.Count} sections × {s0.pts.Count} pts, {area:F1} m², {volume:F2} m³, {Mathf.Max(0.005f, area * skinDensity):F2} t";
         }
 
         static void SmoothNormals(Mesh m)
@@ -282,15 +309,29 @@ namespace BDArmory.Avionics
             m.normals = n;
         }
 
-        void SetNode(string id, Vector3 pos, Vector3 dir, bool moveChildren)
+        /// <summary>The section nearest to a position along the part.</summary>
+        public Section SectionAt(float y) => sections.Count == 0 ? null : sections.OrderBy(q => Mathf.Abs(q.y - y)).First();
+
+        /// <summary>Is this skin point (part-local) inside the glass band?</summary>
+        public bool InCanopy(Vector3 local)
+        {
+            if (!canopy || role == "glass") return false;
+            if (local.y < canopyFrom || local.y > canopyTo) return false;
+            var sc = SectionAt(local.y); float centreUp = sc != null ? sc.offset.y : 0;
+            return -local.z - centreUp > canopyAbove;
+        }
+
+        void SetNode(string id, Vector3 pos, Vector3 dir, int size, bool moveChildren)
         {
             var nd = part.FindAttachNode(id); if (nd == null) return;
             var old = nd.position;
-            nd.position = nd.originalPosition = pos; nd.orientation = nd.originalOrientation = dir;
+            nd.position = nd.originalPosition = pos; nd.orientation = nd.originalOrientation = dir; nd.size = size;
             if (!moveChildren || nd.attachedPart == null || nd.attachedPart.parent != part) return;
             var child = nd.attachedPart; var d = part.transform.TransformVector(pos - old);
             child.transform.position += d; child.attPos0 += d;
         }
+
+        static readonly string[] TankResources = { "LiquidFuel", "Oxidizer", "MonoPropellant" };
 
         void UpdateTank()
         {
@@ -300,7 +341,7 @@ namespace BDArmory.Avionics
             if (tank == "LiquidFuel") want["LiquidFuel"] = units;
             else if (tank == "LFO") { want["LiquidFuel"] = units * 0.45f; want["Oxidizer"] = units * 0.55f; }
             else if (tank == "MonoPropellant") want["MonoPropellant"] = units * 0.8f;
-            foreach (var r in part.Resources.ToList()) if (!want.ContainsKey(r.resourceName)) part.Resources.Remove(r);
+            foreach (var r in part.Resources.ToList()) if (TankResources.Contains(r.resourceName) && !want.ContainsKey(r.resourceName)) part.Resources.Remove(r);   // leave other resources (a cockpit's battery) alone
             foreach (var kv in want)
             {
                 var r = part.Resources[kv.Key];
@@ -317,7 +358,9 @@ namespace BDArmory.Avionics
             foreach (var p in part.symmetryCounterparts)
             {
                 var m = p.FindModuleImplementing<ModuleELEShape>(); if (m == null) continue;
-                m.role = role; m.paint = paint; m.smoothing = smoothing; m.spanSegments = spanSegments; m.tank = tank;
+                m.role = role; m.paint = paint; m.smoothing = smoothing; m.spanSegments = spanSegments; m.tank = tank; m.bodyLift = bodyLift;
+                m.nodeTopOffset = nodeTopOffset; m.nodeBottomOffset = nodeBottomOffset; m.nodeTopSize = nodeTopSize; m.nodeBottomSize = nodeBottomSize; m.surfaceNode = surfaceNode;
+                m.canopy = canopy; m.canopyFrom = canopyFrom; m.canopyTo = canopyTo; m.canopyAbove = canopyAbove; m.seatAlong = seatAlong; m.seatUp = seatUp; m.seatSpacing = seatSpacing;
                 m.sections.Clear();
                 foreach (var s in sections) m.sections.Add(s.Clone());
                 m.Encode(); m.Rebuild(true);
