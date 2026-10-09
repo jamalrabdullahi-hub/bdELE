@@ -173,6 +173,12 @@ namespace BDArmory.Avionics
         public static float MaxSpeed(PartModule s) => Mathf.Max((float)maxSpeed.GetValue(s), Speed(s));
         public static float Rest(PartModule s) => (float)defaultPosition.GetValue(s);
         public static void MoveTo(PartModule s, float pos, float speed) => moveTo.Invoke(s, new object[] { pos, speed });
+        /// <summary>Unlock a servo that was locked in the editor (a locked servo ignores every move).</summary>
+        public static bool Unlock(PartModule s)
+        {
+            try { if (isLocked != null && isLocked.CanWrite && Locked(s)) { isLocked.SetValue(s, false); return true; } } catch { }
+            return false;
+        }
 
         /// <summary>Editor only: put the servo at a position right away (moves the parts on it).</summary>
         public static void EditorSetTo(PartModule s, float pos) => editorSetTo?.Invoke(s, new object[] { pos });
@@ -321,7 +327,8 @@ namespace BDArmory.Avionics
                 for (var q = p.parent; q != null; q = q.parent)
                 {
                     var m = q.FindModuleImplementing<ModuleIRTurret>();
-                    if (m == null || (!m.aiming && !includeDisabled) || m.tiltRole != 0) continue;
+                    if (m == null || m.tiltRole != 0) continue;
+                    if (!m.aiming && !m.gantry && !includeDisabled) continue;   // a gantry servo doesn't aim: its aiming switch doesn't remove it
                     var servo = IRServo.Find(q);
                     if (servo == null) continue;
                     if (m.gantry || !IRServo.Rotational(servo)) { def.gantry.Insert(0, (q, servo, m)); continue; } // lifts / doors / arms
@@ -405,6 +412,7 @@ namespace BDArmory.Avionics
             public ServoKin.Sample probe0;
             public float probeT0, probeTarget;
             public float lastCommand = float.NaN, lastCommandT;
+            public float watchPos = float.NaN, watchT; public bool warned;   // gantry: is it actually moving?
         }
 
         class Turret
@@ -526,7 +534,8 @@ namespace BDArmory.Avionics
 
             foreach (var j in t.joints)
             {
-                if (IRServo.Locked(j.servo) || IRServo.FreeMoving(j.servo)) { j.module.status = "servo locked"; continue; }
+                if (IRServo.Locked(j.servo) && IRServo.Unlock(j.servo)) Debug.Log($"[BDArmoryAvionics]: turret: unlocked {j.servo.part.partInfo.title} (locked servos can't aim)");
+                if (IRServo.Locked(j.servo) || IRServo.FreeMoving(j.servo)) { j.module.status = IRServo.FreeMoving(j.servo) ? "servo set to free-moving" : "servo locked"; continue; }
                 float pos = IRServo.Position(j.servo);
                 if (!ServoKin.Get(j.servo, j.module, out Vector3 axis, out _, out float gain))
                 {
@@ -558,8 +567,16 @@ namespace BDArmory.Avionics
             var s = t.settings; float now = Time.time;
             if (haveTarget) s.gLastTarget = now;
             void Set(int st) { if (s.gState != st) { Debug.Log($"[BDArmoryAvionics]: turret on {t.vessel.GetName()}: gantry {ModuleIRTurret.GStateNames[s.gState]} -> {ModuleIRTurret.GStateNames[st]} ({t.gantry.Count} servos)"); s.gState = st; s.gT0 = now; } }
-            bool AllAt(bool deployed) { foreach (var g in t.gantry) if (Mathf.Abs(IRServo.Position(g.servo) - (deployed ? g.module.gDeployed : g.module.gStowed)) > 0.6f) return false; return true; }
+            bool AllAt(bool deployed) { foreach (var g in t.gantry) if (Mathf.Abs(Gap(g.servo, deployed ? g.module.gDeployed : g.module.gStowed)) > 0.6f) return false; return true; }
             float maxDelay = 0; foreach (var g in t.gantry) maxDelay = Mathf.Max(maxDelay, g.module.HasKeys ? g.module.KeyEnd : g.module.gDelay);
+            if (s.gT0 < 0)
+            {
+                // First time in flight: the craft may have been saved posed (deployed, or half-way from the VAB tool).
+                // Don't assume "stowed": actively stow, straight to the end pose.
+                foreach (var g in t.gantry) if (IRServo.Unlock(g.servo)) Debug.Log($"[BDArmoryAvionics]: turret gantry: unlocked {g.servo.part.partInfo.title} (locked servos can't move)");
+                s.gState = 4; s.gT0 = now - maxDelay - 0.01f;
+            }
+            foreach (var g in t.gantry) Watch(g, t);
             switch (s.gState)
             {
                 case 0: // stowed
@@ -568,8 +585,8 @@ namespace BDArmory.Avionics
                 case 1: // deploying, in order of delay
                     foreach (var g in t.gantry)
                     {
-                        if (g.module.HasKeys) Command(g, g.module.Sample(now - s.gT0), IRServo.MaxSpeed(g.servo)); // timeline
-                        else if (now - s.gT0 >= g.module.gDelay) Command(g, g.module.gDeployed, IRServo.MaxSpeed(g.servo));
+                        if (g.module.HasKeys) GCommand(g, g.module.Sample(now - s.gT0)); // timeline
+                        else if (now - s.gT0 >= g.module.gDelay) GCommand(g, g.module.gDeployed);
                     }
                     if ((AllAt(true) && now - s.gT0 >= maxDelay) || now - s.gT0 > maxDelay + 20f) { if (now - s.gT0 >= maxDelay + s.deployHold) Set(2); }
                     if (!haveTarget && now - s.gLastTarget > s.stowAfter) Set(3);
@@ -587,8 +604,8 @@ namespace BDArmory.Avionics
                     if (haveTarget) { Set(1); break; }
                     foreach (var g in t.gantry)
                     {
-                        if (g.module.HasKeys) Command(g, g.module.Sample(maxDelay - (now - s.gT0)), IRServo.MaxSpeed(g.servo)); // timeline backwards
-                        else if (now - s.gT0 >= maxDelay - g.module.gDelay) Command(g, g.module.gStowed, IRServo.MaxSpeed(g.servo));
+                        if (g.module.HasKeys) GCommand(g, g.module.Sample(maxDelay - (now - s.gT0))); // timeline backwards
+                        else if (now - s.gT0 >= maxDelay - g.module.gDelay) GCommand(g, g.module.gStowed);
                     }
                     if (AllAt(false) || now - s.gT0 > maxDelay + 20f) Set(0);
                     break;
@@ -597,6 +614,36 @@ namespace BDArmory.Avionics
             if (s.gState != 2) foreach (var j in t.joints) { j.module.status = $"{t.Kind}: gantry {st}"; if (s.gState != 3) Command(j, IRServo.Rest(j.servo), IRServo.Speed(j.servo) * 0.5f); }
             foreach (var g in t.gantry) g.module.status = $"gantry {st}";
             return s.gState == 2;
+        }
+
+        /// <summary>Distance from a servo's position to a pose; continuous (full-circle) servos count the short way round.</summary>
+        static float Gap(PartModule servo, float target)
+        {
+            float pos = IRServo.Position(servo);
+            return IRServo.Continuous(servo) ? Mathf.DeltaAngle(pos, target) : target - pos;
+        }
+
+        /// <summary>Gantry move: clamp to the servo's range (the VAB's design mode can pose past it), short way round on continuous servos.</summary>
+        static void GCommand(Joint g, float target)
+        {
+            if (IRServo.Locked(g.servo)) IRServo.Unlock(g.servo);
+            float pos = IRServo.Position(g.servo);
+            if (IRServo.Continuous(g.servo)) target = pos + Mathf.DeltaAngle(pos, target);
+            else target = Mathf.Clamp(target, IRServo.Min(g.servo), IRServo.Max(g.servo));
+            Command(g, target, IRServo.MaxSpeed(g.servo));
+        }
+
+        /// <summary>A gantry servo that's been told to move but hasn't for 3 s: say why in its status and the log (once).</summary>
+        static void Watch(Joint g, Turret t)
+        {
+            float pos = IRServo.Position(g.servo), now = Time.time;
+            if (float.IsNaN(g.watchPos) || Mathf.Abs(pos - g.watchPos) > 0.2f) { g.watchPos = pos; g.watchT = now; return; }
+            if (float.IsNaN(g.lastCommand) || Mathf.Abs(g.lastCommand - pos) < 0.6f || now - g.watchT < 3f || g.warned) return;
+            g.warned = true;
+            string why = IRServo.Locked(g.servo) ? "locked" : IRServo.FreeMoving(g.servo) ? "set to free-moving" : $"stuck at {pos:F1} (asked {g.lastCommand:F1}, range {IRServo.Min(g.servo):F0}..{IRServo.Max(g.servo):F0}): blocked by a part or out of power?";
+            g.module.status = "gantry servo not moving: " + why;
+            Debug.LogWarning($"[BDArmoryAvionics]: turret on {t.vessel.GetName()}: gantry servo {g.servo.part.partInfo.title} not moving: {why}");
+            ScreenMessages.PostScreenMessage($"Turret deploy: {g.servo.part.partInfo.title} {why}", 4f, ScreenMessageStyle.UPPER_CENTER);
         }
 
         /// <summary>Send a move only when the goal has really changed (or every 0.25 s), not every physics frame.</summary>
