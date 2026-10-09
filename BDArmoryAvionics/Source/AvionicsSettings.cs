@@ -105,6 +105,9 @@ namespace BDArmory.Avionics
         public static bool FCSAll = true;               // ELE flight control on every AI aircraft (not only craft with the part-menu toggle on)
         public static float TheatreSpawnKm = 150f;      // AI flights materialise inside this slant range (atmospheric craft only)
         public static bool RadarTerrainMask = true;     // ELE sensor engine: radars can't see through hills at any range
+        public static bool UseVEFX = true;
+        public static bool EngineSmoke = true;          // ELE smoke / contrails on every engine
+        public static float EngineSmokeAmount = 1f;              // weapon explosions drawn by the merged Volumetric Explosion FX
         public static int KillCamMode = 1;              // 0 off, 1 kills involving my craft, 2 any kill nearby
         public static bool GEffects = true;             // grey-out / red-out / G-LOC for crewed craft
         public static bool CamShake = true;             // camera shake from G onset, hits and guns
@@ -228,6 +231,9 @@ namespace BDArmory.Avionics
                 DynamicDamage = GetBool(node, "DynamicDamage", DynamicDamage);
                 KrakenGuard = GetBool(node, "KrakenGuard", KrakenGuard);
                 GEffects = GetBool(node, "GEffects", GEffects);
+                UseVEFX = GetBool(node, "UseVEFX", UseVEFX);
+                EngineSmoke = GetBool(node, "EngineSmoke", EngineSmoke);
+                if (float.TryParse(node.GetValue("EngineSmokeAmount"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var esa)) EngineSmokeAmount = Mathf.Clamp(esa, 0.25f, 2f);
                 CamShake = GetBool(node, "CamShake", CamShake);
                 Callouts = GetBool(node, "Callouts", Callouts);
                 if (int.TryParse(node.GetValue("KillCamMode"), out int kcm)) KillCamMode = Mathf.Clamp(kcm, 0, 2);
@@ -342,6 +348,9 @@ namespace BDArmory.Avionics
                 node.AddValue("DynamicDamage", DynamicDamage);
                 node.AddValue("KrakenGuard", KrakenGuard);
                 node.AddValue("GEffects", GEffects);
+                node.AddValue("UseVEFX", UseVEFX);
+                node.AddValue("EngineSmoke", EngineSmoke);
+                node.AddValue("EngineSmokeAmount", EngineSmokeAmount.ToString(System.Globalization.CultureInfo.InvariantCulture));
                 node.AddValue("CamShake", CamShake);
                 node.AddValue("Callouts", Callouts);
                 node.AddValue("KillCamMode", KillCamMode);

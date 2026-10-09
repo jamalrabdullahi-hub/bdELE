@@ -1,0 +1,6 @@
+Volumetric Explosion FX 1.0 by Warnix - MIT License, Copyright (c) 2026 Warnix
+https://spacedock.info/mod/4652/Volumetric%20Explosion%20FX
+
+This folder is VEFX merged into ELE (rebuilt from its released assembly, with small ELE changes marked "(ELE)":
+asset/settings paths under GameData/BDArmoryAvionics/VEFX, a weapon-explosion entry point for BDArmory warheads,
+and staying off when the standalone mod is installed). The full licence text is in GameData/BDArmoryAvionics/VEFX/LICENSE.

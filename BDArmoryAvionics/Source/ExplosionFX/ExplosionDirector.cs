@@ -113,7 +113,7 @@ namespace BDArmory.Avionics
             return ps;
         }
 
-        static Gradient Gradient((Color c, float t)[] cols, (float a, float t)[] alphas)
+        internal static Gradient Gradient((Color c, float t)[] cols, (float a, float t)[] alphas)
         {
             var g = new Gradient();
             g.SetKeys(System.Array.ConvertAll(cols, x => new GradientColorKey(x.c, x.t)), System.Array.ConvertAll(alphas, x => new GradientAlphaKey(x.a, x.t)));
@@ -121,7 +121,7 @@ namespace BDArmory.Avionics
         }
 
         /// <summary>Soft, lumpy smoke puff (generated once, 64x64).</summary>
-        static Texture2D PuffTexture()
+        internal static Texture2D PuffTexture()
         {
             var t = new Texture2D(64, 64, TextureFormat.ARGB32, false) { wrapMode = TextureWrapMode.Clamp };
             for (int y = 0; y < 64; y++)
@@ -209,6 +209,21 @@ namespace BDArmory.Avionics
             Vector3 local = d.transform.InverseTransformPoint(pos);
             Vector3 drift = Vector3.ProjectOnPlane(new Vector3(0.6f, 0, 0.8f), up).normalized * 3f; // a light breeze
             LogFx(kind, tnt, k);
+            // Volumetric Explosion FX (merged into ELE): the fireball, smoke, debris and shock for every real blast.
+            // ELE keeps the light, camera shake, scorch marks and lingering fires (they also feed the IR sensors).
+            if (AvionicsSettings.UseVEFX && kind != ExplosionKind.Small && kind != ExplosionKind.ShapedCharge
+                && VolumetricExplosionFX.Ksp.FlightController.Explode(pos, tnt, kind == ExplosionKind.FuelKill || kind == ExplosionKind.Thermobaric, kind == ExplosionKind.Water))
+            {
+                d.Light(pos, R, 0.3f, 6f);
+                d.Shake(pos, R, k);
+                if (groundDist < R * 0.6f && kind != ExplosionKind.Water && Physics.Raycast(pos + up * 1f, -up, out var vg, R + 2f, (int)LayerMasks.Scenery))
+                {
+                    Persistent.AddScorch(vg.point, vg.normal, Mathf.Clamp(R * 0.35f, 1.5f, 80f), kind == ExplosionKind.Nuke ? 1800f : 300f);
+                    if (kind == ExplosionKind.FuelKill || tnt >= 100f || kind == ExplosionKind.Thermobaric)
+                        Persistent.AddFire(vg.point, Mathf.Clamp(R * 0.25f, 2f, 30f), kind == ExplosionKind.FuelKill ? 90f : Mathf.Clamp(tnt / 5f, 30f, 120f));
+                }
+                return;
+            }
             // True volumetrics (when the shader bundle is installed) replace most of the puffs for big blasts.
             if (kind != ExplosionKind.Small && kind != ExplosionKind.ShapedCharge && kind != ExplosionKind.Water && tnt >= 5f
                 && VolumetricFX.Explosion(pos, up, R, k, kind, groundDist < R * 0.6f)) q *= 0.4f;

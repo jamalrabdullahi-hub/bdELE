@@ -286,6 +286,9 @@ namespace BDArmory.Avionics
 
         void EffectsTab()
         {
+            AvionicsSettings.UseVEFX = Row(AvionicsSettings.UseVEFX, AvionicsSettings.UseVEFX ? "Volumetric Explosion FX (flame button: settings)" : "ELE classic explosions");
+            if (ToggleCycle(ref AvionicsSettings.EngineSmoke, AvionicsSettings.EngineSmoke ? "Engine smoke" : "Engine smoke off", $"Smoke x{AvionicsSettings.EngineSmokeAmount:0.##}"))
+                AvionicsSettings.EngineSmokeAmount = AvionicsSettings.EngineSmokeAmount >= 2f ? 0.25f : AvionicsSettings.EngineSmokeAmount * 2f;
             if (ToggleCycle(ref AvionicsSettings.Shrapnel, AvionicsSettings.Shrapnel ? $"Shrapnel ×{AvionicsSettings.ShrapnelRangeMult:0.#}" : "Shrapnel off", Shrapnel.Patterns[AvionicsSettings.ShrapnelPattern]))
                 AvionicsSettings.ShrapnelPattern = (AvionicsSettings.ShrapnelPattern + 1) % Shrapnel.Patterns.Length;
             if (ToggleCycle(ref AvionicsSettings.ExplosionScale, AvionicsSettings.ExplosionScale ? "Sized fireballs" : "BDA fireballs", $"Blast FX: {ExplosionDirector.QualityNames[AvionicsSettings.ExplosionQuality]}", AvionicsSettings.ExplosionQuality > 0))
