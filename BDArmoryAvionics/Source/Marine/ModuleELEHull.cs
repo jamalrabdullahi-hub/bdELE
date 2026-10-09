@@ -53,7 +53,7 @@ namespace BDArmory.Avionics
             if (secs == null) { ScreenMessages.PostScreenMessage("Could not read those hull parts", 3f, ScreenMessageStyle.UPPER_CENTER); return; }
             shape.sections.Clear(); shape.sections.AddRange(secs);
             hullBeam = secs.Max(q => q.pts.Max(pt => pt.x) * 2); hullDepth = secs.Max(q => q.pts.Max(pt => pt.y) - q.pts.Min(pt => pt.y));
-            shape.smoothing = 1; shape.canopy = false; shape.role = "naval";
+            shape.smoothing = 1; shape.canopy = false; shape.role = "naval"; shape.paint = "HazeGrey";
             shape.Encode(); shape.Rebuild(true); shape.Propagate(); ringsFor = null;
             ScreenMessages.PostScreenMessage($"{HullLines.Classes[cls].label} lines at {k * 100:F0}% scale", 2f, ScreenMessageStyle.UPPER_CENTER);
         }
@@ -153,7 +153,7 @@ namespace BDArmory.Avionics
                 FillSection(s, HalfOutline(hullForm, Mathf.Max(0.05f, B * w), top, Mathf.Min(bottom, top - 0.05f)), 8);
                 secs.Add(s);
             }
-            shape.canopy = false; shape.role = "naval";
+            shape.canopy = false; shape.role = "naval"; shape.paint = "HazeGrey";
             shape.smoothing = 1;
             shape.spanSegments = Mathf.Clamp(Mathf.RoundToInt(L / 3f), 2, 8);
         }

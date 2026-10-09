@@ -33,7 +33,7 @@ namespace BDArmory.Avionics
         public string role = "skin";
 
         [KSPField(isPersistant = true, guiActiveEditor = true, guiName = "Paint", groupName = "eleshape"),
-         UI_ChooseOption(options = new[] { "White", "Grey", "Dark", "Olive", "Tan", "Navy", "Red", "Orange" }, scene = UI_Scene.Editor)]
+         UI_ChooseOption(options = new[] { "White", "Grey", "HazeGrey", "LightGrey", "Dark", "Olive", "Tan", "Navy", "Red", "Orange" }, display = new[] { "White", "Grey", "Haze grey (warship)", "Light grey (warship)", "Dark", "Olive", "Tan", "Navy", "Red", "Orange" }, scene = UI_Scene.Editor)]
         public string paint = "White";
 
         [KSPField(isPersistant = true, guiActiveEditor = true, guiName = "Smoothness", groupName = "eleshape"),
@@ -69,7 +69,7 @@ namespace BDArmory.Avionics
 
         public static readonly Dictionary<string, Color> Paints = new()
         {
-            { "White", Color.white }, { "Grey", new Color(0.62f, 0.64f, 0.66f) }, { "Dark", new Color(0.25f, 0.26f, 0.28f) }, { "Olive", new Color(0.42f, 0.45f, 0.3f) },
+            { "White", Color.white }, { "Grey", new Color(0.62f, 0.64f, 0.66f) }, { "HazeGrey", new Color(0.56f, 0.58f, 0.6f) }, { "LightGrey", new Color(0.7f, 0.72f, 0.73f) }, { "Dark", new Color(0.25f, 0.26f, 0.28f) }, { "Olive", new Color(0.42f, 0.45f, 0.3f) },
             { "Tan", new Color(0.72f, 0.64f, 0.48f) }, { "Navy", new Color(0.2f, 0.26f, 0.4f) }, { "Red", new Color(0.7f, 0.15f, 0.12f) }, { "Orange", new Color(0.95f, 0.5f, 0.12f) },
         };
 
