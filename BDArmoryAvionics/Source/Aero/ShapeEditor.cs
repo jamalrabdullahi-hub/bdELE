@@ -27,7 +27,7 @@ namespace BDArmory.Avionics
         bool mirror = true, allSections, snap = true;
         float snapStep = 0.05f;
         int preset, tab, stockIdx;
-        string libName = "My shape";
+        string libName = "My shape", copyPart = "modernsuperfront";
         Vector2 libScroll;
         static readonly string[] Tabs = { "Shape", "Ends & nodes", "Canopy & seats", "Library" };
         readonly List<string> undo = new(), redo = new();
@@ -237,6 +237,17 @@ namespace BDArmory.Avionics
                 if (GUI.Button(new Rect(x, y, w, 20), "Open shapes folder", btn)) { System.IO.Directory.CreateDirectory(ShapeLibrary.Folder); Application.OpenURL("file:///" + ShapeLibrary.Folder.Replace('\\', '/')); }
                 y += 24;
                 Note("Saved shapes load onto any ELE Shape or Shape Cockpit.");
+                y += 6;
+                Head("COPY ANY PART'S SHAPE");
+                copyPart = GUI.TextField(new Rect(x, y, w - 84, 20), copyPart);
+                if (GUI.Button(new Rect(x + w - 80, y, 80, 20), "Copy", btn))
+                {
+                    Push();
+                    if (!HullLines.CopyPart(Target, copyPart.Trim(), 6)) { undo.RemoveAt(undo.Count - 1); ScreenMessages.PostScreenMessage($"No part named {copyPart}", 2f, ScreenMessageStyle.UPPER_CENTER); }
+                    else { sel = 0; selPt = -1; }
+                }
+                y += 22;
+                Note("Part name as in its cfg (e.g. modernsuperfront, mk1pod).");
             }
             yOut = y;
         }

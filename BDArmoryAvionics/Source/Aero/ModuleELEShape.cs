@@ -29,7 +29,7 @@ namespace BDArmory.Avionics
         [KSPField] public float costPerM2 = 12f;
 
         [KSPField(isPersistant = true, guiActiveEditor = true, guiName = "Look", groupName = "eleshape", groupDisplayName = "ELE Shape"),
-         UI_ChooseOption(options = new[] { "skin", "dark", "metal", "accent", "glass" }, display = new[] { "Stock white", "Stock dark", "Metal", "Painted", "Glass" }, scene = UI_Scene.Editor)]
+         UI_ChooseOption(options = new[] { "skin", "dark", "metal", "accent", "glass", "naval" }, display = new[] { "Stock white", "Stock dark", "Metal", "Painted", "Glass", "Naval (red / boot-top / paint)" }, scene = UI_Scene.Editor)]
         public string role = "skin";
 
         [KSPField(isPersistant = true, guiActiveEditor = true, guiName = "Paint", groupName = "eleshape"),
@@ -61,6 +61,8 @@ namespace BDArmory.Avionics
         [KSPField(isPersistant = true)] public Vector3 surfaceNode = Vector3.zero;   // surface-attach point: x, along, up (from the underside)
         // Canopy band: skin between canopyFrom..canopyTo (along) and above canopyAbove (up, from the section centre) is glass
         [KSPField(isPersistant = true)] public bool canopy = false;
+        // Naval paint: antifouling red below this height (part-local up), a black boot-top stripe, the paint colour above
+        [KSPField(isPersistant = true)] public float navalWaterline = 0f;
         [KSPField(isPersistant = true)] public float canopyFrom = 0.2f, canopyTo = 1.0f, canopyAbove = 0.15f;
         // Cockpit (crewed variant): pilot seat position along / up, second seat this far behind (0 = one seat)
         [KSPField(isPersistant = true)] public float seatAlong = 0.3f, seatUp = -0.35f, seatSpacing = 1.1f;
@@ -228,7 +230,13 @@ namespace BDArmory.Avionics
                     float ua = arc / tile, ub = (arc + seg) / tile, uf = Mathf.Floor(ua); arc += seg;
                     int k = v.Count;
                     v.Add(A[i]); v.Add(A[j]); v.Add(B[i]); v.Add(B[j]);
-                    if (atlas)
+                    if (role == "naval")
+                    {
+                        float NV(Vector3 p) => 0.5f + (-p.z - navalWaterline) / 6f;   // 0.5 = waterline, 6 m tall band
+                        float ua0 = arc / 4f, ua1 = (arc + seg) / 4f;
+                        uv.Add(new Vector2(ua0, NV(A[i]))); uv.Add(new Vector2(ua1, NV(A[j]))); uv.Add(new Vector2(ua0, NV(B[i]))); uv.Add(new Vector2(ua1, NV(B[j])));
+                    }
+                    else if (atlas)
                     {
                         float u0 = Mathf.Clamp01(ua - uf), u1 = Mathf.Clamp01(ub - uf), v0 = Mathf.Clamp01(va - vf), v1 = Mathf.Clamp01(vb - vf);
                         uv.Add(new Vector2(rect.x + u0 * rect.width, rect.y + v0 * rect.height)); uv.Add(new Vector2(rect.x + u1 * rect.width, rect.y + v0 * rect.height));
@@ -261,7 +269,7 @@ namespace BDArmory.Avionics
             meshT.localScale = Vector3.one; meshT.localPosition = Vector3.zero; meshT.localRotation = Quaternion.identity;
             var mf = meshT.GetComponent<MeshFilter>(); if (mf != null) mf.sharedMesh = mesh;
             var mr = meshT.GetComponent<MeshRenderer>();
-            if (mr != null) mr.sharedMaterials = new[] { StockSkin.Mat(role, Paints.TryGetValue(paint, out var col) ? col : Color.white), StockSkin.Mat("glass", Color.white) };
+            if (mr != null) mr.sharedMaterials = new[] { role == "naval" ? NavalMat(Paints.TryGetValue(paint, out var nc) ? nc : Color.grey) : StockSkin.Mat(role, Paints.TryGetValue(paint, out var col) ? col : Color.white), StockSkin.Mat("glass", Color.white) };
 
             // collider: the unsmoothed hull (few points, cheap and convex)
             var hr = Rings(false);
@@ -297,6 +305,27 @@ namespace BDArmory.Avionics
             if (part.DragCubes != null) { part.DragCubes.Procedural = true; if (HighLogic.LoadedSceneIsFlight) part.DragCubes.ForceUpdate(true, true, true); }
             float len = s1.y - s0.y;
             info = $"lift x{part.bodyLiftMultiplier:0.0}, {len:F2} m long, {sections.Count} sections × {s0.pts.Count} pts, {area:F1} m², {volume:F2} m³, {Mathf.Max(0.005f, area * skinDensity):F2} t";
+        }
+
+        static readonly Dictionary<string, Material> navalMats = new();
+        /// <summary>Hull paint: dark red antifouling, black boot-top stripe at the waterline, the chosen paint above (vertical band texture).</summary>
+        static Material NavalMat(Color top)
+        {
+            string key = ColorUtility.ToHtmlStringRGB(top);
+            if (navalMats.TryGetValue(key, out var m) && m != null) return m;
+            var t = new Texture2D(4, 256, TextureFormat.RGBA32, true) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
+            var red = new Color(0.45f, 0.1f, 0.08f); var black = new Color(0.08f, 0.08f, 0.09f);
+            for (int y = 0; y < 256; y++)
+            {
+                float v = y / 255f;
+                var c = v < 0.47f ? red : v < 0.53f ? black : top;
+                for (int x = 0; x < 4; x++) t.SetPixel(x, y, c * (0.94f + 0.06f * Mathf.PerlinNoise(y * 0.3f, x)));
+            }
+            t.Apply();
+            m = new Material(Shader.Find("KSP/Specular")) { mainTexture = t, color = Color.white };
+            m.SetFloat("_Shininess", 0.25f); m.SetColor("_SpecColor", new Color(0.3f, 0.3f, 0.3f));
+            navalMats[key] = m;
+            return m;
         }
 
         static void SmoothNormals(Mesh m)
@@ -360,7 +389,7 @@ namespace BDArmory.Avionics
                 var m = p.FindModuleImplementing<ModuleELEShape>(); if (m == null) continue;
                 m.role = role; m.paint = paint; m.smoothing = smoothing; m.spanSegments = spanSegments; m.tank = tank; m.bodyLift = bodyLift;
                 m.nodeTopOffset = nodeTopOffset; m.nodeBottomOffset = nodeBottomOffset; m.nodeTopSize = nodeTopSize; m.nodeBottomSize = nodeBottomSize; m.surfaceNode = surfaceNode;
-                m.canopy = canopy; m.canopyFrom = canopyFrom; m.canopyTo = canopyTo; m.canopyAbove = canopyAbove; m.seatAlong = seatAlong; m.seatUp = seatUp; m.seatSpacing = seatSpacing;
+                m.canopy = canopy; m.navalWaterline = navalWaterline; m.canopyFrom = canopyFrom; m.canopyTo = canopyTo; m.canopyAbove = canopyAbove; m.seatAlong = seatAlong; m.seatUp = seatUp; m.seatSpacing = seatSpacing;
                 m.sections.Clear();
                 foreach (var s in sections) m.sections.Add(s.Clone());
                 m.Encode(); m.Rebuild(true);

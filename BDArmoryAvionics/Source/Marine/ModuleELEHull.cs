@@ -39,6 +39,25 @@ namespace BDArmory.Avionics
          UI_ChooseOption(options = new[] { "Transom", "Cruiser" }, scene = UI_Scene.Editor)]
         public string stern = "Transom";
 
+        [KSPField(isPersistant = true, guiActiveEditor = true, guiName = "Ship lines", groupName = "elehull"),
+         UI_ChooseOption(options = new[] { "0", "1", "2", "3", "4" }, display = new[] { "LBP Corvette", "LBP Destroyer", "LBP Carrier", "LBP Trimaran", "LBP Submarine" }, scene = UI_Scene.Editor)]
+        public string lbpClass = "0";
+
+        [KSPEvent(guiActiveEditor = true, guiName = "Generate from ship lines (LBP)", groupName = "elehull")]
+        public void GenerateLBP()
+        {
+            if (shape == null) return;
+            int cls = int.TryParse(lbpClass, out var c) ? Mathf.Clamp(c, 0, HullLines.Classes.Length - 1) : 0;
+            if (!HullLines.Available(cls)) { ScreenMessages.PostScreenMessage("Large Boat Parts Pack (Modern) is not installed", 3f, ScreenMessageStyle.UPPER_CENTER); return; }
+            var secs = HullLines.Build(cls, 16, hullLength, out float k);
+            if (secs == null) { ScreenMessages.PostScreenMessage("Could not read those hull parts", 3f, ScreenMessageStyle.UPPER_CENTER); return; }
+            shape.sections.Clear(); shape.sections.AddRange(secs);
+            hullBeam = secs.Max(q => q.pts.Max(pt => pt.x) * 2); hullDepth = secs.Max(q => q.pts.Max(pt => pt.y) - q.pts.Min(pt => pt.y));
+            shape.smoothing = 1; shape.canopy = false; shape.role = "naval";
+            shape.Encode(); shape.Rebuild(true); shape.Propagate(); ringsFor = null;
+            ScreenMessages.PostScreenMessage($"{HullLines.Classes[cls].label} lines at {k * 100:F0}% scale", 2f, ScreenMessageStyle.UPPER_CENTER);
+        }
+
         [KSPField(guiActiveEditor = true, guiActive = true, guiName = "Water", groupName = "elehull")]
         public string waterInfo = "";
 
@@ -134,7 +153,7 @@ namespace BDArmory.Avionics
                 FillSection(s, HalfOutline(hullForm, Mathf.Max(0.05f, B * w), top, Mathf.Min(bottom, top - 0.05f)), 8);
                 secs.Add(s);
             }
-            shape.canopy = false;
+            shape.canopy = false; shape.role = "naval";
             shape.smoothing = 1;
             shape.spanSegments = Mathf.Clamp(Mathf.RoundToInt(L / 3f), 2, 8);
         }
@@ -255,6 +274,7 @@ namespace BDArmory.Avionics
             float a = lo, b = hi;
             for (int k = 0; k < 24; k++) { float m = (a + b) / 2; if (Vol(m) < need) a = m; else b = m; }
             editorWaterline = (a + b) / 2;
+            if (shape.role == "naval" && Mathf.Abs(shape.navalWaterline - editorWaterline) > 0.05f) { shape.navalWaterline = editorWaterline; shape.Rebuild(false); }   // paint the boot-top where she'll float
             waterInfo = $"draft {editorWaterline - lo:F2} m, freeboard {hi - editorWaterline:F2} m ({mass:F1} t, reserve {(full - need) / full * 100:F0}%)";
         }
 
