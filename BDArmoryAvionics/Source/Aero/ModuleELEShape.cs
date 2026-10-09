@@ -174,7 +174,7 @@ namespace BDArmory.Avionics
         }
 
         /// <summary>All rings of the skin: section rings smoothed, with curved in-between rings (straight next to "hard" sections).</summary>
-        List<Vector3[]> Rings(bool detailed)
+        public List<Vector3[]> Rings(bool detailed)
         {
             var secRings = sections.Select(s => (detailed ? SmoothRing(s) : s.pts).Select(p => Local(s, p)).ToArray()).ToList();
             var rings = new List<Vector3[]>();
