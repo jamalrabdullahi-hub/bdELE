@@ -572,6 +572,7 @@ namespace BDArmory.Avionics
             var av = FlightGlobals.ActiveVessel;
             if (av != null && For(av) == null) operatorHome = av;
             lm.manual = takeControl;
+            watched = lm.vessel;
             if (av != lm.vessel) FlightGlobals.ForceSetActiveVessel(lm.vessel);
             StartCoroutine(ActivateHullCam(lm));
         }
@@ -620,11 +621,14 @@ namespace BDArmory.Avionics
 
         void LateUpdate()
         {
-            // If the munition we were watching is gone, go back to the operator's craft.
-            if (operatorHome != null && operatorHome.loaded && FlightGlobals.ActiveVessel != null && FlightGlobals.ActiveVessel != operatorHome)
+            // If the munition we were watching is gone (it hit, or broke up), go back to the operator's craft.
+            // If you switched to some other craft yourself, that's your choice: forget the operator and don't pull you back.
+            var av = FlightGlobals.ActiveVessel;
+            if (av != null && For(av) != null) watched = av;
+            if (operatorHome != null && operatorHome.loaded && av != null && av != operatorHome && For(av) == null)
             {
-                var lm = For(FlightGlobals.ActiveVessel);
-                if (lm == null && returnPending < 0) returnPending = Time.time + 1.5f;
+                if (watched == null || !watched.loaded) { if (returnPending < 0) returnPending = Time.time + 1.5f; }   // the munition is gone
+                else { operatorHome = null; watched = null; }                                                          // you switched away yourself
             }
             if (returnPending > 0 && Time.time > returnPending)
             {
@@ -634,6 +638,7 @@ namespace BDArmory.Avionics
             }
         }
         float returnPending = -1;
+        Vessel watched;
 
         // ---- GUI ----
 
