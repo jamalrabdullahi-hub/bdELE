@@ -202,6 +202,13 @@ namespace BDArmory.Avionics
                 targetPoint = new Vector3d(b.GetLatitude(w), b.GetLongitude(w), b.GetAltitude(w));
             }
             if (!CanStrike) return;
+            if (target == vessel || (TargetPos - vessel.CoM).magnitude < fuzeDistance * 4f)
+            {
+                // never designate itself or a point it's already sitting on (would set the proximity fuze off at once)
+                target = null; pointTarget = false;
+                ScreenMessages.PostScreenMessage($"{Label}: target too close / invalid", 2f, ScreenMessageStyle.UPPER_CENTER);
+                return;
+            }
             targetLabel = v != null ? v.GetName() : $"point {targetPoint.x:F4},{targetPoint.y:F4}";
             SetState(LMState.Terminal);
             Debug.Log($"[BDArmoryAvionics]: {Label} striking {targetLabel} ({why})");
@@ -536,7 +543,16 @@ namespace BDArmory.Avionics
             if (cam == null) return;
             var ray = cam.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0));
             ray.origin += ray.direction * 5f;
-            if (Physics.Raycast(ray, out var hit, 30000f, (int)(LayerMasks.Scenery | LayerMasks.Parts | LayerMasks.Wheels)))
+            // nearest hit that isn't the munition itself (the chase camera looks straight through it)
+            RaycastHit hit = default; bool found = false; float best = float.MaxValue;
+            foreach (var h in Physics.RaycastAll(ray, 30000f, (int)(LayerMasks.Scenery | LayerMasks.Parts | LayerMasks.Wheels)))
+            {
+                var hp = h.collider.GetComponentInParent<Part>();
+                if (hp != null && hp.vessel == lm.vessel) continue;
+                if ((h.point - lm.vessel.CoM).magnitude < lm.fuzeDistance * 4f) continue;
+                if (h.distance < best) { best = h.distance; hit = h; found = true; }
+            }
+            if (found)
             {
                 var p = hit.collider.GetComponentInParent<Part>();
                 lm.manual = false;

@@ -94,12 +94,16 @@ namespace BDArmory.Avionics
             var ps = go.AddComponent<ParticleSystem>();
             ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
             var main = ps.main;
-            main.loop = false; main.playOnAwake = false; main.simulationSpace = ParticleSystemSimulationSpace.Local; // the root moves with the floating origin
+            main.loop = true; main.playOnAwake = false; main.simulationSpace = ParticleSystemSimulationSpace.Local; // the root moves with the floating origin
             main.maxParticles = max; main.startSpeed = 0; main.gravityModifier = 0;
             var em = ps.emission; em.enabled = false;
             var shape = ps.shape; shape.enabled = false;
             var c = ps.colorOverLifetime; c.enabled = true; c.color = col;
             var s = ps.sizeOverLifetime; s.enabled = true; s.size = new ParticleSystem.MinMaxCurve(1f, size);
+            // billow: slow random spin and gentle turbulence so puffs roll instead of sliding as flat cards
+            var rot = ps.rotationOverLifetime; rot.enabled = true; rot.z = new ParticleSystem.MinMaxCurve(-0.6f, 0.6f);
+            var noise = ps.noise; noise.enabled = true; noise.strength = 1.2f; noise.frequency = 0.15f; noise.scrollSpeed = 0.3f; noise.damping = true; noise.quality = ParticleSystemNoiseQuality.Low;
+            var drag = ps.limitVelocityOverLifetime; drag.enabled = true; drag.limit = 30f; drag.dampen = 0.05f;
             var r = ps.GetComponent<ParticleSystemRenderer>();
             r.material = new Material(Shader.Find(shader)) { mainTexture = tex };
             r.renderMode = ParticleSystemRenderMode.Billboard;
