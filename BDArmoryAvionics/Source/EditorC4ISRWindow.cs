@@ -204,6 +204,8 @@ namespace BDArmory.Avionics
             y += 26;
             if (GUI.Button(new Rect(0, y, w, 22), EditorRangeWindow.Show ? "Aircraft range (open)" : "Open aircraft range", EditorRangeWindow.Show ? sel : btn)) EditorRangeWindow.Show = !EditorRangeWindow.Show;
             y += 26;
+            if (GUI.Button(new Rect(0, y, w, 22), Blueprints.Show ? "Blueprints (open)" : "Open blueprints (reference images)", Blueprints.Show ? sel : btn)) Blueprints.Show = !Blueprints.Show;
+            y += 26;
 
             if (fit.pilot != null)
             {
