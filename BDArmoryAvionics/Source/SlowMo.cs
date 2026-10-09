@@ -73,7 +73,7 @@ namespace BDArmory.Avionics
 
         void OnGUI()
         {
-            if (!Active || !BDArmory.UI.BDArmorySetup.GAME_UI_ENABLED) return;
+            if (!Active || KillCam.Playing || !BDArmory.UI.BDArmorySetup.GAME_UI_ENABLED) return;
             var r = new Rect(Screen.width / 2f - 150, 80, 300, 24);
             var btn = BDArmory.UI.BDArmorySetup.ButtonStyle; var sel = BDArmory.UI.BDArmorySetup.SelectedButtonStyle;
             GUI.Box(r, "", BDArmory.UI.BDArmorySetup.BDGuiSkin.box);

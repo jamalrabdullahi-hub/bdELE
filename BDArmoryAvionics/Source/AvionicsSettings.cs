@@ -105,6 +105,10 @@ namespace BDArmory.Avionics
         public static bool FCSAll = true;               // ELE flight control on every AI aircraft (not only craft with the part-menu toggle on)
         public static float TheatreSpawnKm = 150f;      // AI flights materialise inside this slant range (atmospheric craft only)
         public static bool RadarTerrainMask = true;     // ELE sensor engine: radars can't see through hills at any range
+        public static int KillCamMode = 1;              // 0 off, 1 kills involving my craft, 2 any kill nearby
+        public static bool GEffects = true;             // grey-out / red-out / G-LOC for crewed craft
+        public static bool CamShake = true;             // camera shake from G onset, hits and guns
+        public static bool Callouts = true;             // PULL UP / STALL / BINGO etc. with tones
         public static bool KrakenGuard = true;          // gentle unpack, stiffer solver, runaway-energy watchdog
         public static bool KrakenWatchdog = true;
         public static bool Profiler = false;            // ELE performance profiler window
@@ -223,6 +227,10 @@ namespace BDArmory.Avionics
                 VaporCones = GetBool(node, "VaporCones", VaporCones);
                 DynamicDamage = GetBool(node, "DynamicDamage", DynamicDamage);
                 KrakenGuard = GetBool(node, "KrakenGuard", KrakenGuard);
+                GEffects = GetBool(node, "GEffects", GEffects);
+                CamShake = GetBool(node, "CamShake", CamShake);
+                Callouts = GetBool(node, "Callouts", Callouts);
+                if (int.TryParse(node.GetValue("KillCamMode"), out int kcm)) KillCamMode = Mathf.Clamp(kcm, 0, 2);
                 KrakenWatchdog = GetBool(node, "KrakenWatchdog", KrakenWatchdog);
                 PhysicsLOD = GetBool(node, "PhysicsLOD", PhysicsLOD);
                 LODMarkers = GetBool(node, "LODMarkers", LODMarkers);
@@ -333,6 +341,10 @@ namespace BDArmory.Avionics
                 node.AddValue("VaporCones", VaporCones);
                 node.AddValue("DynamicDamage", DynamicDamage);
                 node.AddValue("KrakenGuard", KrakenGuard);
+                node.AddValue("GEffects", GEffects);
+                node.AddValue("CamShake", CamShake);
+                node.AddValue("Callouts", Callouts);
+                node.AddValue("KillCamMode", KillCamMode);
                 node.AddValue("KrakenWatchdog", KrakenWatchdog);
                 node.AddValue("PhysicsLOD", PhysicsLOD);
                 node.AddValue("LODMarkers", LODMarkers);

@@ -202,6 +202,10 @@ namespace BDArmory.Avionics
         public static CombatLog Instance;
         public static BattleReport Live;
         internal static bool inApplyScore;
+        /// <summary>A craft was killed: victim id, killer craft (may be null), killer name, kill code + weapon text. Kill cam and wingman listen.</summary>
+        public static event Action<uint, Vessel, string, string> OnKill;
+        /// <summary>A craft took damage (cockpit shake listens).</summary>
+        public static event Action<Vessel, WeaponKind, float> OnHit;
         const float CreditWindow = 30f, BattleTimeout = 45f;
 
         class Combatant
@@ -268,6 +272,7 @@ namespace BDArmory.Avionics
 
         public static void Hit(string attacker, Vessel victim, WeaponKind kind, float damage, string weapon, bool newHit)
         {
+            if (victim != null && OnHit != null) Safe(() => OnHit(victim, kind, damage));
             if (Instance == null || victim == null || string.IsNullOrEmpty(attacker) || Instance.leaving) return;
             Safe(() => Instance.RecordHit(attacker, victim, kind, damage, weapon, newHit));
         }
@@ -517,6 +522,7 @@ namespace BDArmory.Avionics
                 Note(text, true, 1);
                 ScreenMessages.PostScreenMessage($"KILL  {killerName} > {c.name}  {code} {how}", 4f, ScreenMessageStyle.UPPER_LEFT);
                 Debug.Log($"[BDArmoryAvionics]: kill: {text}; {why}");
+                Safe(() => OnKill?.Invoke(c.id, killer?.vessel, killerName, $"{code} {how}"));
             }
             else if (friendly)
             {

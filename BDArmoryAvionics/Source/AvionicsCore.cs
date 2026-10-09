@@ -273,6 +273,12 @@ namespace BDArmory.Avionics
             AvionicsSettings.AltitudeFromSeaLevel = Row(AvionicsSettings.AltitudeFromSeaLevel, AvionicsSettings.AltitudeFromSeaLevel ? "Altitudes: from sea level" : "Altitudes: from ground (stock)");
             AvionicsSettings.FCSAll = Row(AvionicsSettings.FCSAll, AvionicsSettings.FCSAll ? "ELE flight control: all AI aircraft" : "ELE flight control: per-craft only");
             AvionicsSettings.AirOpsTelemetry = Row(AvionicsSettings.AirOpsTelemetry, "AI telemetry log");
+            Header("Wingmen");
+            if (GUI.Button(new Rect(8, y, w, RowH - 2), Wingman.BarOpen ? "Close wingman orders" : "Wingman orders  ( ` key )", Wingman.BarOpen ? sel : btn)) Wingman.ToggleBar();
+            y += RowH;
+            Header("Cockpit");
+            Pair(ref AvionicsSettings.GEffects, "G effects / G-LOC", ref AvionicsSettings.CamShake, "Camera shake");
+            AvionicsSettings.Callouts = Row(AvionicsSettings.Callouts, "Warning callouts (Alt+N silence)");
             Header("Ejection");
             AvionicsSettings.AutoEjectOnDestruction = Row(AvionicsSettings.AutoEjectOnDestruction, "Auto-eject if cockpit destroyed");
             Note($"Manual: press {AvionicsSettings.KeyEject} twice.");
@@ -290,6 +296,10 @@ namespace BDArmory.Avionics
             if (ToggleCycle(ref AvionicsSettings.DynamicDamage, AvionicsSettings.DynamicDamage ? "Dents & bends" : "Damage FX off", $"Damage x{AvionicsSettings.DamageIntensity:0.#}"))
                 AvionicsSettings.DamageIntensity = AvionicsSettings.DamageIntensity >= 2f ? 0.5f : AvionicsSettings.DamageIntensity + 0.5f;
             ExplosionTestWindow.Show = Row(ExplosionTestWindow.Show, "Explosion FX test panel");
+            Header("Replay");
+            if (GUI.Button(new Rect(8, y, w, RowH - 2), KillCam.ModeNames[AvionicsSettings.KillCamMode], AvionicsSettings.KillCamMode > 0 ? sel : btn)) AvionicsSettings.KillCamMode = (AvionicsSettings.KillCamMode + 1) % 3;
+            y += RowH;
+            Note("Alt+R instant replay · Space ends a replay");
         }
 
         void PhysicsTab()
