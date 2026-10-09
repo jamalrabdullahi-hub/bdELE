@@ -96,6 +96,10 @@ namespace BDArmory.Avionics
          UI_FloatRange(minValue = 0f, maxValue = 180f, stepIncrement = 5f, scene = UI_Scene.All)]
         public float panLimit = 60f;
 
+        [KSPField(isPersistant = true, guiActive = true, guiActiveEditor = true, guiName = "Camera looks at", groupName = "eoir"),
+         UI_ChooseOption(options = new[] { "Manual", "Munition target" }, scene = UI_Scene.All)]
+        public string lookAt = "Manual";   // "Munition target": on a missile / loitering munition, the view follows what it's going after
+
         public int ModeIndex => Mathf.Max(0, System.Array.IndexOf(Modes, defaultMode));
 
         void Set(int m) { defaultMode = Modes[m]; if (HullCam.Current != null && HullCam.Current.part == part) EOIRView.Mode = m; }

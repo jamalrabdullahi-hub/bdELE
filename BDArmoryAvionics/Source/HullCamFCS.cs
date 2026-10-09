@@ -64,7 +64,15 @@ namespace BDArmory.Avionics
                 // zoom: HullCam's own (mouse wheel / zoom keys), now allowed down to 120x
             }
             Quaternion camLocal = CamLocal(fc);
-            if (Slave && EOIRView.TryTrack(out var tp, out _) && t.parent != null)
+            Vector3 mp = default;
+            bool munition = s != null && s.lookAt == "Munition target" && MunitionTarget(hc.vessel, out mp);
+            if (munition && t.parent != null)
+            {
+                Vector3 dir = Quaternion.Inverse(t.parent.rotation * baseLocal * camLocal) * (mp - fc.mainCamera.transform.position).normalized;
+                Yaw = Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
+                Pitch = Mathf.Asin(Mathf.Clamp(dir.y, -1, 1)) * Mathf.Rad2Deg;
+            }
+            else if (Slave && EOIRView.TryTrack(out var tp, out _) && t.parent != null)
             {
                 Vector3 dir = Quaternion.Inverse(t.parent.rotation * baseLocal * camLocal) * (tp - fc.mainCamera.transform.position).normalized;
                 Yaw = Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
@@ -73,6 +81,18 @@ namespace BDArmory.Avionics
             Yaw = Mathf.Clamp(Yaw, -limit, limit); Pitch = Mathf.Clamp(Pitch, -limit, limit);
             t.localRotation = baseLocal * camLocal * Quaternion.Euler(-Pitch, Yaw, 0) * Quaternion.Inverse(camLocal);
             if (Lase) SlavePod(hc.vessel);
+        }
+
+        /// <summary>What the munition this camera rides on is going after (read only): a loitering munition's target, or a fired BDArmory missile's target position.</summary>
+        static bool MunitionTarget(Vessel v, out Vector3 p)
+        {
+            p = default;
+            if (v == null) return false;
+            foreach (var lm in VesselModuleRegistry.GetModules<ModuleLoiteringMunition>(v))
+                if (lm != null && lm.CanStrike) { p = lm.TargetPos; return true; }
+            foreach (var m in VesselModuleRegistry.GetModules<MissileBase>(v))
+                if (m != null && m.HasFired && m.TargetAcquired && m.TargetPosition != Vector3.zero) { p = m.TargetPosition; return true; }
+            return false;
         }
 
         /// <summary>Keep the craft's targeting pod pointed at the camera track (it lases / ranges / gives GPS like normal).</summary>
