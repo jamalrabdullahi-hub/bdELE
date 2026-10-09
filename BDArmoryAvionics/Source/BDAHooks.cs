@@ -66,15 +66,16 @@ namespace BDArmory.Avionics
     {
         void Awake()
         {
-            try
+            // Patch class by class: one patch that can't apply (a game or mod update changed its target) must not take the others down.
+            var harmony = new Harmony("BDArmoryAvionics");
+            int ok = 0, failed = 0;
+            foreach (var t in AccessTools.GetTypesFromAssembly(typeof(HarmonyLoader).Assembly))
             {
-                new Harmony("BDArmoryAvionics").PatchAll(typeof(HarmonyLoader).Assembly);
-                Debug.Log("[BDArmoryAvionics]: Harmony patches applied.");
+                if (t.GetCustomAttributes(typeof(HarmonyPatch), true).Length == 0) continue;
+                try { harmony.CreateClassProcessor(t).Patch(); ok++; }
+                catch (System.Exception e) { failed++; Debug.LogError($"[BDArmoryAvionics]: Harmony patch {t.Name} failed (only that feature is affected): {e.InnerException?.Message ?? e.Message}"); }
             }
-            catch (System.Exception e)
-            {
-                Debug.LogError($"[BDArmoryAvionics]: Harmony patching failed, FLIR, the pod HUD and IADS EMCON will be unavailable: {e}");
-            }
+            Debug.Log($"[BDArmoryAvionics]: Harmony patches applied: {ok} ok, {failed} failed.");
         }
     }
 

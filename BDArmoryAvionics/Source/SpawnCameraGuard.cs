@@ -25,7 +25,7 @@ namespace BDArmory.Avionics
         static bool Prefix(Vessel v) => !SpawnCameraGuard.Block(v);
     }
 
-    [HarmonyPatch(typeof(FlightGlobals), nameof(FlightGlobals.SetActiveVessel))]
+    [HarmonyPatch(typeof(FlightGlobals), nameof(FlightGlobals.SetActiveVessel), new[] { typeof(Vessel) })]   // there is also an internal (Vessel, bool) overload
     static class Patch_SetActiveVessel
     {
         static bool Prefix(Vessel v, ref bool __result)
