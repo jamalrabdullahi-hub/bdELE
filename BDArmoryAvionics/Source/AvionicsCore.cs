@@ -35,7 +35,7 @@ namespace BDArmory.Avionics
 
         void Start()
         {
-            menuRect = new Rect(Screen.width - 300, 90, 240, 840);
+            menuRect = new Rect(Screen.width - 320, 90, 260, 300);
             radarRectIndex = GUIUtils.RegisterGUIRect(new Rect());
             listRectIndex = GUIUtils.RegisterGUIRect(new Rect());
             gpsRectIndex = GUIUtils.RegisterGUIRect(new Rect());
@@ -141,7 +141,7 @@ namespace BDArmory.Avionics
 
             var skin = BDArmorySetup.BDGuiSkin;
             if (showMenu)
-                menuRect = DrawWindow(MenuWindowID, menuRect, MenuWindow, "BDA: Enhanced Lethality", skin);
+                { menuRect = DrawWindow(MenuWindowID, menuRect, MenuWindow, "BDA: Enhanced Lethality", skin); menuRect.height = menuHeight; }
             if (AvionicsSettings.ShowRadar3D)
                 AvionicsSettings.Radar3DRect = KeepSize(DrawWindow(Radar3DWindow.WindowID, AvionicsSettings.Radar3DRect, Radar3DWindow.Draw, "3D Radar", skin), AvionicsSettings.Radar3DRect);
             if (AvionicsSettings.ShowTargetList)
@@ -164,6 +164,47 @@ namespace BDArmory.Avionics
             return rect;
         }
 
+        // ---------------- hub: tabs instead of one long list ----------------
+        static readonly string[] Tabs = { "Sensors", "Command", "Air ops", "Effects", "Physics", "System" };
+        static int tab;
+        const float RowH = 22, Gap = 4;
+        float y, w, menuHeight = 300;
+        GUIStyle btn, sel;
+
+        /// <summary>Full-width toggle row.</summary>
+        bool Row(bool on, string label) { bool r = GUI.Toggle(new Rect(8, y, w, RowH - 2), on, label, on ? sel : btn); y += RowH; return r; }
+        /// <summary>Two half-width toggles on one row.</summary>
+        void Pair(ref bool a, string la, ref bool b, string lb)
+        {
+            float h = hw2(w);
+            a = GUI.Toggle(new Rect(8, y, h, RowH - 2), a, la, a ? sel : btn);
+            b = GUI.Toggle(new Rect(12 + h, y, h, RowH - 2), b, lb, b ? sel : btn);
+            y += RowH;
+        }
+        /// <summary>Toggle on the left, cycling value button on the right.</summary>
+        bool ToggleCycle(ref bool on, string label, string value, bool valueLit = false)
+        {
+            float h = hw2(w);
+            on = GUI.Toggle(new Rect(8, y, h, RowH - 2), on, label, on ? sel : btn);
+            bool click = GUI.Button(new Rect(12 + h, y, h, RowH - 2), value, valueLit ? sel : btn);
+            y += RowH; return click;
+        }
+        void Header(string text) { y += 4; AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), text, AvionicsDraw.Header, AvionicsDraw.HudText); y += 16; }
+        void Note(string text) { AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), text, AvionicsDraw.LabelSmall, AvionicsDraw.ScopeText); y += 13; }
+
+        /// <summary>Every ELE flight window, for the open count and "close all".</summary>
+        static int OpenWindows(bool close)
+        {
+            int n = 0;
+            void C(ref bool b) { if (b) { n++; if (close) b = false; } }
+            C(ref AvionicsSettings.ShowRadar3D); C(ref AvionicsSettings.ShowTargetList); C(ref AvionicsSettings.ShowGPSManager);
+            C(ref AvionicsSettings.ShowEW); C(ref AvionicsSettings.ShowLM); C(ref AvionicsSettings.ShowFeeds);
+            C(ref C4ISRSettings.ShowConsole); C(ref C4ISRSettings.ShowIADS); C(ref C4ISRSettings.ShowLink); C(ref C4ISRSettings.ShowSettings);
+            C(ref TheatreWindow.Show); C(ref AirfieldsWindow.Show); C(ref ATCWindow.Show); C(ref AfterActionWindow.Show);
+            C(ref ExplosionTestWindow.Show); C(ref AvionicsSettings.Profiler);
+            return n;
+        }
+
         void MenuWindow(int id)
         {
             if (GUI.Button(new Rect(menuRect.width - 20, 2, 18, 18), " X", BDArmorySetup.CloseButtonStyle))
@@ -172,80 +213,122 @@ namespace BDArmory.Avionics
                 if (toolbarButton != null) toolbarButton.SetFalse(false);
                 return;
             }
-            var btn = BDArmorySetup.ButtonStyle;
-            var sel = BDArmorySetup.SelectedButtonStyle;
-            float y = 24, w = menuRect.width - 16;
-            AvionicsSettings.ShowRadar3D = GUI.Toggle(new Rect(8, y, w, 22), AvionicsSettings.ShowRadar3D, "3D Radar", AvionicsSettings.ShowRadar3D ? sel : btn); y += 24;
-            AvionicsSettings.ShowTargetList = GUI.Toggle(new Rect(8, y, w, 22), AvionicsSettings.ShowTargetList, "Target List", AvionicsSettings.ShowTargetList ? sel : btn); y += 24;
-            AvionicsSettings.ShowGPSManager = GUI.Toggle(new Rect(8, y, w, 22), AvionicsSettings.ShowGPSManager, "GPS Manager", AvionicsSettings.ShowGPSManager ? sel : btn); y += 28;
-            AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), $"Ejection seat: press {AvionicsSettings.KeyEject} twice", AvionicsDraw.Header, AvionicsDraw.HudText); y += 16;
-            AvionicsSettings.AutoEjectOnDestruction = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.AutoEjectOnDestruction, "Auto-eject if cockpit destroyed", AvionicsSettings.AutoEjectOnDestruction ? sel : btn); y += 22;
-            AvionicsSettings.ThreatBanner = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.ThreatBanner, "Missile / lock warning banner", AvionicsSettings.ThreatBanner ? sel : btn); y += 22;
-            AvionicsSettings.FormationAssist = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.FormationAssist, "AI formation assist", AvionicsSettings.FormationAssist ? sel : btn); y += 22;
-            AvionicsSettings.TakeoffAssist = GUI.Toggle(new Rect(8, y, hw2(w), 20), AvionicsSettings.TakeoffAssist, "AI takeoff assist", AvionicsSettings.TakeoffAssist ? sel : btn);
-            AvionicsSettings.AirOpsTelemetry = GUI.Toggle(new Rect(12 + hw2(w), y, hw2(w), 20), AvionicsSettings.AirOpsTelemetry, "AI telemetry log", AvionicsSettings.AirOpsTelemetry ? sel : btn); y += 22;
-            AvionicsSettings.AltitudeFromSeaLevel = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.AltitudeFromSeaLevel,
-                AvionicsSettings.AltitudeFromSeaLevel ? "AI altitudes: from sea level" : "AI altitudes: from ground (stock)", AvionicsSettings.AltitudeFromSeaLevel ? sel : btn); y += 22;
-            AvionicsSettings.CombatOperators = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.CombatOperators, "Combat operators (crew skill)", AvionicsSettings.CombatOperators ? sel : btn); y += 22;
-            AfterActionWindow.Show = GUI.Toggle(new Rect(8, y, hw2(w), 20), AfterActionWindow.Show, CombatLog.Live != null ? "AAR (live)" : "After-action rpt", AfterActionWindow.Show ? sel : btn);
-            AvionicsSettings.AARPopup = GUI.Toggle(new Rect(12 + hw2(w), y, hw2(w), 20), AvionicsSettings.AARPopup, "AAR at battle end", AvionicsSettings.AARPopup ? sel : btn); y += 26;
-            var small = AvionicsDraw.LabelSmall;
+            btn = BDArmorySetup.ButtonStyle; sel = BDArmorySetup.SelectedButtonStyle;
+            w = menuRect.width - 16; y = 24;
 
-            // C4ISR
-            AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), "C4ISR", AvionicsDraw.Header, AvionicsDraw.HudText); y += 16;
-            float hw = (w - 4) / 2;
-            C4ISRSettings.ShowConsole = GUI.Toggle(new Rect(8, y, hw, 20), C4ISRSettings.ShowConsole, "C2 Console", C4ISRSettings.ShowConsole ? sel : btn);
-            C4ISRSettings.ShowMapOverlay = GUI.Toggle(new Rect(12 + hw, y, hw, 20), C4ISRSettings.ShowMapOverlay, "Map overlay", C4ISRSettings.ShowMapOverlay ? sel : btn); y += 22;
-            C4ISRSettings.ShowIADS = GUI.Toggle(new Rect(8, y, hw, 20), C4ISRSettings.ShowIADS, "IADS", C4ISRSettings.ShowIADS ? sel : btn);
-            C4ISRSettings.ShowLink = GUI.Toggle(new Rect(12 + hw, y, hw, 20), C4ISRSettings.ShowLink, "Data link", C4ISRSettings.ShowLink ? sel : btn); y += 22;
-            C4ISRSettings.GlobalC2 = GUI.Toggle(new Rect(8, y, hw, 20), C4ISRSettings.GlobalC2, "Global C2", C4ISRSettings.GlobalC2 ? sel : btn);
-            C4ISRSettings.ShowSettings = GUI.Toggle(new Rect(12 + hw, y, hw, 20), C4ISRSettings.ShowSettings, "Settings", C4ISRSettings.ShowSettings ? sel : btn); y += 22;
-            AvionicsSettings.ShowEW = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.ShowEW, $"Electronic warfare · stealth {StealthRCS.ModeNames[AvionicsSettings.StealthModel]}", AvionicsSettings.ShowEW ? sel : btn); y += 22;
-            AvionicsSettings.ShowLM = GUI.Toggle(new Rect(8, y, hw, 20), AvionicsSettings.ShowLM, "Loitering munitions", AvionicsSettings.ShowLM ? sel : btn);
-            TheatreWindow.Show = GUI.Toggle(new Rect(12 + hw, y, hw, 20), TheatreWindow.Show, "Theatre", TheatreWindow.Show ? sel : btn); y += 22;
-            AvionicsSettings.ShowFeeds = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.ShowFeeds, Ocisly.Available ? "Camera feeds (OCISLY)" : "Camera feeds (OCISLY not loaded)", AvionicsSettings.ShowFeeds ? sel : btn); y += 22;
-            AirfieldsWindow.Show = GUI.Toggle(new Rect(8, y, hw, 20), AirfieldsWindow.Show, "Airfields", AirfieldsWindow.Show ? sel : btn);
-            ATCWindow.Show = GUI.Toggle(new Rect(12 + hw, y, hw, 20), ATCWindow.Show, "ATC", ATCWindow.Show ? sel : btn); y += 22;
-            AvionicsSettings.Shrapnel = GUI.Toggle(new Rect(8, y, hw, 20), AvionicsSettings.Shrapnel, AvionicsSettings.Shrapnel ? $"Shrapnel ×{AvionicsSettings.ShrapnelRangeMult:0.#}" : "Shrapnel off", AvionicsSettings.Shrapnel ? sel : btn);
-            if (GUI.Button(new Rect(12 + hw, y, hw, 20), Shrapnel.Patterns[AvionicsSettings.ShrapnelPattern], btn)) AvionicsSettings.ShrapnelPattern = (AvionicsSettings.ShrapnelPattern + 1) % Shrapnel.Patterns.Length;
-            y += 22;
-            AvionicsSettings.ExplosionScale = GUI.Toggle(new Rect(8, y, hw, 20), AvionicsSettings.ExplosionScale, AvionicsSettings.ExplosionScale ? "Sized fireballs" : "BDA fireballs", AvionicsSettings.ExplosionScale ? sel : btn);
-            if (GUI.Button(new Rect(12 + hw, y, hw, 20), $"Blast FX: {ExplosionDirector.QualityNames[AvionicsSettings.ExplosionQuality]}", AvionicsSettings.ExplosionQuality > 0 ? sel : btn)) AvionicsSettings.ExplosionQuality = (AvionicsSettings.ExplosionQuality + 1) % 4;
-            y += 22;
-            AvionicsSettings.Volumetric = GUI.Toggle(new Rect(8, y, hw, 20), AvionicsSettings.Volumetric, !VolumetricShaders.Loaded ? "No shaders" : AvionicsSettings.Volumetric ? "Volumetric FX" : "Volumetric off", AvionicsSettings.Volumetric && VolumetricShaders.Loaded ? sel : btn);
-            AvionicsSettings.VaporCones = GUI.Toggle(new Rect(12 + hw, y, hw, 20), AvionicsSettings.VaporCones, AvionicsSettings.VaporCones ? "Vapor cones" : "Cones off", AvionicsSettings.VaporCones ? sel : btn);
-            y += 22;
-            AvionicsSettings.DynamicDamage = GUI.Toggle(new Rect(8, y, hw, 20), AvionicsSettings.DynamicDamage, AvionicsSettings.DynamicDamage ? "Dents & bends" : "Damage FX off", AvionicsSettings.DynamicDamage ? sel : btn);
-            if (GUI.Button(new Rect(12 + hw, y, hw, 20), $"Damage x{AvionicsSettings.DamageIntensity:0.#}", btn)) AvionicsSettings.DamageIntensity = AvionicsSettings.DamageIntensity >= 2f ? 0.5f : AvionicsSettings.DamageIntensity + 0.5f;
-            y += 22;
-            AvionicsSettings.PhysicsLOD = GUI.Toggle(new Rect(8, y, hw, 20), AvionicsSettings.PhysicsLOD, AvionicsSettings.PhysicsLOD ? $"Physics LOD {PhysicsLOD.Full}/{PhysicsLOD.Rigid}/{PhysicsLOD.Ghost}" : "Physics LOD off", AvionicsSettings.PhysicsLOD ? sel : btn);
-            if (GUI.Button(new Rect(12 + hw, y, hw, 20), $"Full {AvionicsSettings.LODUnpackKm:F0} km", btn)) AvionicsSettings.LODUnpackKm = AvionicsSettings.LODUnpackKm >= 25 ? 5 : AvionicsSettings.LODUnpackKm + 5;
-            y += 22;
-            AvionicsSettings.LODMarkers = GUI.Toggle(new Rect(8, y, hw, 20), AvionicsSettings.LODMarkers, AvionicsSettings.LODMarkers ? "Far markers" : "Markers off", AvionicsSettings.LODMarkers ? sel : btn);
-            if (GUI.Button(new Rect(12 + hw, y, hw, 20), $"Loaded {AvionicsSettings.LODLoadKm:F0} km", btn)) AvionicsSettings.LODLoadKm = AvionicsSettings.LODLoadKm >= 100 ? 15 : AvionicsSettings.LODLoadKm + 15;
-            y += 22;
-            AvionicsSettings.KrakenGuard = GUI.Toggle(new Rect(8, y, hw, 20), AvionicsSettings.KrakenGuard, AvionicsSettings.KrakenGuard ? $"Kraken guard ({KrakenGuard.Fixes})" : "Kraken guard off", AvionicsSettings.KrakenGuard ? sel : btn);
-            AvionicsSettings.Profiler = GUI.Toggle(new Rect(12 + hw, y, hw, 20), AvionicsSettings.Profiler, "Profiler", AvionicsSettings.Profiler ? sel : btn);
-            y += 22;
-            if (GUI.Button(new Rect(8, y, hw, 20), $"Slow-mo: {SlowMo.Names[SlowMo.Index]}", SlowMo.Index > 0 ? sel : btn)) SlowMo.Set((SlowMo.Index + 1) % SlowMo.Speeds.Length);
-            if (GUI.Button(new Rect(12 + hw, y, hw, 20), SlowMo.Frozen ? "Unfreeze" : "Freeze", SlowMo.Frozen ? sel : btn)) SlowMo.ToggleFreeze();
-            y += 22;
-            ExplosionTestWindow.Show = GUI.Toggle(new Rect(8, y, w, 20), ExplosionTestWindow.Show, "Explosion FX test panel", ExplosionTestWindow.Show ? sel : btn);
-            y += 22;
-            AvionicsSettings.FCSAll = GUI.Toggle(new Rect(8, y, w, 20), AvionicsSettings.FCSAll, AvionicsSettings.FCSAll ? "ELE flight control: all AI aircraft" : "ELE flight control: per-craft toggle only", AvionicsSettings.FCSAll ? sel : btn);
-            y += 24;
+            // tab strip: two rows of three
+            float tw = (w - 8) / 3;
+            for (int i = 0; i < Tabs.Length; i++)
+                if (GUI.Toggle(new Rect(8 + (i % 3) * (tw + 4), y + (i / 3) * RowH, tw, RowH - 2), tab == i, Tabs[i], tab == i ? sel : btn)) tab = i;
+            y += 2 * RowH + Gap;
+
+            switch (tab)
+            {
+                case 0: SensorsTab(); break;
+                case 1: CommandTab(); break;
+                case 2: AirOpsTab(); break;
+                case 3: EffectsTab(); break;
+                case 4: PhysicsTab(); break;
+                default: SystemTab(); break;
+            }
+
+            // footer: always-visible status + window housekeeping
+            y += Gap;
+            int open = OpenWindows(false);
+            if (GUI.Button(new Rect(8, y, w, RowH - 2), open > 0 ? $"Close all ELE windows ({open})" : "No ELE windows open", btn)) OpenWindows(true);
+            y += RowH;
+            Status();
+            menuHeight = y + 6;   // window fits its tab (applied after GUI.Window returns)
+            GUIUtils.DragWindow();
+        }
+
+        void SensorsTab()
+        {
+            Pair(ref AvionicsSettings.ShowRadar3D, "3D Radar", ref AvionicsSettings.ShowTargetList, "Target List");
+            AvionicsSettings.ShowGPSManager = Row(AvionicsSettings.ShowGPSManager, "GPS Manager");
+            AvionicsSettings.ShowFeeds = Row(AvionicsSettings.ShowFeeds, Ocisly.Available ? "Camera feeds (OCISLY)" : "Camera feeds (OCISLY not loaded)");
+            AvionicsSettings.ThreatBanner = Row(AvionicsSettings.ThreatBanner, "Missile / lock warning banner");
+            Note("FLIR and the pod HUD: bottom of the Target Camera window.");
+        }
+
+        void CommandTab()
+        {
+            Pair(ref C4ISRSettings.ShowConsole, "C2 Console", ref C4ISRSettings.ShowMapOverlay, "Map overlay");
+            Pair(ref C4ISRSettings.ShowIADS, "IADS", ref C4ISRSettings.ShowLink, "Data link");
+            Pair(ref C4ISRSettings.GlobalC2, "Global C2", ref C4ISRSettings.ShowSettings, "C4ISR settings");
+            AvionicsSettings.ShowEW = Row(AvionicsSettings.ShowEW, $"Electronic warfare · stealth {StealthRCS.ModeNames[AvionicsSettings.StealthModel]}");
+            Pair(ref AvionicsSettings.ShowLM, "Loitering munitions", ref TheatreWindow.Show, "Theatre");
+            Header("Records");
+            bool aar = AfterActionWindow.Show;
+            Pair(ref aar, CombatLog.Live != null ? "AAR (live)" : "After-action rpt", ref AvionicsSettings.AARPopup, "AAR at battle end");
+            AfterActionWindow.Show = aar;
+            AvionicsSettings.CombatOperators = Row(AvionicsSettings.CombatOperators, "Combat operators (crew skill)");
+        }
+
+        void AirOpsTab()
+        {
+            Pair(ref AirfieldsWindow.Show, "Airfields", ref ATCWindow.Show, "ATC");
+            Header("AI pilots");
+            Pair(ref AvionicsSettings.TakeoffAssist, "Takeoff assist", ref AvionicsSettings.FormationAssist, "Formation assist");
+            AvionicsSettings.AltitudeFromSeaLevel = Row(AvionicsSettings.AltitudeFromSeaLevel, AvionicsSettings.AltitudeFromSeaLevel ? "Altitudes: from sea level" : "Altitudes: from ground (stock)");
+            AvionicsSettings.FCSAll = Row(AvionicsSettings.FCSAll, AvionicsSettings.FCSAll ? "ELE flight control: all AI aircraft" : "ELE flight control: per-craft only");
+            AvionicsSettings.AirOpsTelemetry = Row(AvionicsSettings.AirOpsTelemetry, "AI telemetry log");
+            Header("Ejection");
+            AvionicsSettings.AutoEjectOnDestruction = Row(AvionicsSettings.AutoEjectOnDestruction, "Auto-eject if cockpit destroyed");
+            Note($"Manual: press {AvionicsSettings.KeyEject} twice.");
+        }
+
+        void EffectsTab()
+        {
+            if (ToggleCycle(ref AvionicsSettings.Shrapnel, AvionicsSettings.Shrapnel ? $"Shrapnel ×{AvionicsSettings.ShrapnelRangeMult:0.#}" : "Shrapnel off", Shrapnel.Patterns[AvionicsSettings.ShrapnelPattern]))
+                AvionicsSettings.ShrapnelPattern = (AvionicsSettings.ShrapnelPattern + 1) % Shrapnel.Patterns.Length;
+            if (ToggleCycle(ref AvionicsSettings.ExplosionScale, AvionicsSettings.ExplosionScale ? "Sized fireballs" : "BDA fireballs", $"Blast FX: {ExplosionDirector.QualityNames[AvionicsSettings.ExplosionQuality]}", AvionicsSettings.ExplosionQuality > 0))
+                AvionicsSettings.ExplosionQuality = (AvionicsSettings.ExplosionQuality + 1) % 4;
+            bool vol = AvionicsSettings.Volumetric;
+            Pair(ref vol, !VolumetricShaders.Loaded ? "No shaders" : vol ? "Volumetric FX" : "Volumetric off", ref AvionicsSettings.VaporCones, AvionicsSettings.VaporCones ? "Vapor cones" : "Cones off");
+            AvionicsSettings.Volumetric = vol;
+            if (ToggleCycle(ref AvionicsSettings.DynamicDamage, AvionicsSettings.DynamicDamage ? "Dents & bends" : "Damage FX off", $"Damage x{AvionicsSettings.DamageIntensity:0.#}"))
+                AvionicsSettings.DamageIntensity = AvionicsSettings.DamageIntensity >= 2f ? 0.5f : AvionicsSettings.DamageIntensity + 0.5f;
+            ExplosionTestWindow.Show = Row(ExplosionTestWindow.Show, "Explosion FX test panel");
+        }
+
+        void PhysicsTab()
+        {
+            if (ToggleCycle(ref AvionicsSettings.PhysicsLOD, AvionicsSettings.PhysicsLOD ? "Physics LOD" : "Physics LOD off", $"Full {AvionicsSettings.LODUnpackKm:F0} km"))
+                AvionicsSettings.LODUnpackKm = AvionicsSettings.LODUnpackKm >= 25 ? 5 : AvionicsSettings.LODUnpackKm + 5;
+            if (ToggleCycle(ref AvionicsSettings.LODMarkers, AvionicsSettings.LODMarkers ? "Far markers" : "Markers off", $"Loaded {AvionicsSettings.LODLoadKm:F0} km"))
+                AvionicsSettings.LODLoadKm = AvionicsSettings.LODLoadKm >= 100 ? 15 : AvionicsSettings.LODLoadKm + 15;
+            if (AvionicsSettings.PhysicsLOD) Note($"Craft: {PhysicsLOD.Full} full · {PhysicsLOD.Rigid} rigid · {PhysicsLOD.Ghost} ghost");
+            Pair(ref AvionicsSettings.KrakenGuard, AvionicsSettings.KrakenGuard ? $"Kraken guard ({KrakenGuard.Fixes})" : "Kraken guard off", ref AvionicsSettings.Profiler, "Profiler");
+            Header("Time");
+            float h = hw2(w);
+            if (GUI.Button(new Rect(8, y, h, RowH - 2), $"Slow-mo: {SlowMo.Names[SlowMo.Index]}", SlowMo.Index > 0 ? sel : btn)) SlowMo.Set((SlowMo.Index + 1) % SlowMo.Speeds.Length);
+            if (GUI.Button(new Rect(12 + h, y, h, RowH - 2), SlowMo.Frozen ? "Unfreeze" : "Freeze", SlowMo.Frozen ? sel : btn)) SlowMo.ToggleFreeze();
+            y += RowH;
+            Note("Alt+, slower · Alt+. faster · Alt+/ freeze · Alt+; step");
+        }
+
+        void SystemTab()
+        {
+            if (GUI.Button(new Rect(8, y, w, RowH - 2), ELEBridge.Running ? $"ELE Bridge ON (127.0.0.1:{ELEBridge.Port})" : "ELE Bridge off", ELEBridge.Running ? sel : btn)) ELEBridge.Toggle();
+            y += RowH;
+            Note("Lets local scripts read and fly the craft. Alt+B.");
+            Header("Keys");
+            Note($"Targets: {AvionicsSettings.KeyPrevTarget} / {AvionicsSettings.KeyNextTarget} · lock {AvionicsSettings.KeyLockTarget}");
+            Note($"Slew camera: {AvionicsSettings.KeySlewCamera} · camera reset: Ctrl+Shift+C");
+            Note("Rebind: BDArmoryAvionics/PluginData/Avionics.cfg");
+        }
+
+        /// <summary>Two status lines shown under every tab.</summary>
+        void Status()
+        {
             var net = DataLinkNetwork.PlayerNetwork;
             var iads = net != null ? IADSController.For(net.team) : null;
             int engaged = 0;
             if (iads != null) foreach (var s in iads.sites.Values) if (s.assigned != null) engaged++;
-            AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), net == null ? "Net: no weapon manager" : $"Net: {net.ConnectedCount}/{net.nodes.Count} linked, {net.tracks.Count} tracks", small, AvionicsDraw.ScopeText); y += 13;
-            AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), iads == null ? "IADS: idle" : $"IADS: {iads.sites.Count} SAM sites, {engaged} engaging", small, AvionicsDraw.ScopeText); y += 13;
-            if (iads != null && iads.log.Count > 0) AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), iads.log[0], small, AvionicsDraw.ScopeText);
-            y += 17;
-            AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), "FLIR and the pod HUD are controlled from", small, AvionicsDraw.ScopeText); y += 13;
-            AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), "the bottom of the Target Camera window.", small, AvionicsDraw.ScopeText); y += 16;
-            AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), "Keys: BDArmoryAvionics/PluginData/Avionics.cfg", small, AvionicsDraw.ScopeText);
-            GUIUtils.DragWindow();
+            Note(net == null ? "Net: no weapon manager" : $"Net: {net.ConnectedCount}/{net.nodes.Count} linked, {net.tracks.Count} tracks");
+            Note(iads == null ? "IADS: idle" : $"IADS: {iads.sites.Count} SAM sites, {engaged} engaging");
+            if (iads != null && iads.log.Count > 0) Note(iads.log[0]);
         }
     }
 }

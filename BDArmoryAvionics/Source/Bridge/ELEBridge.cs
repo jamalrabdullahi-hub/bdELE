@@ -71,6 +71,9 @@ namespace BDArmory.Avionics
             lock (log) { log.Add($"{DateTime.Now:HH:mm:ss} {s}"); if (log.Count > 500) log.RemoveRange(0, 100); }
         }
 
+        public static bool Running => running;
+        public static void Toggle() { if (running) StopServer(); else StartServer(); }
+
         static void StartServer()
         {
             if (running) return;
