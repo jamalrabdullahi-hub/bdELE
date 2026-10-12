@@ -206,6 +206,8 @@ namespace BDArmory.Avionics
             y += 26;
             if (GUI.Button(new Rect(0, y, w, 22), Blueprints.Show ? "Blueprints (open)" : "Open blueprints (reference images)", Blueprints.Show ? sel : btn)) Blueprints.Show = !Blueprints.Show;
             y += 26;
+            if (GUI.Button(new Rect(0, y, w, 22), FARVisualizer.Show ? "FAR aerodynamics (open)" : "Open FAR aerodynamics charts", FARVisualizer.Show ? sel : btn)) FARVisualizer.Show = !FARVisualizer.Show;
+            y += 26;
 
             if (fit.pilot != null)
             {
