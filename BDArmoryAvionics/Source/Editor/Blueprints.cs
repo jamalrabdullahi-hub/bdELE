@@ -238,7 +238,7 @@ namespace BDArmory.Avionics
 
             Vector2 m = new(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
             bool over = Show && rect.Contains(m);
-            if (over != locked && EditorLogic.fetch != null) { if (over) EditorLogic.fetch.Lock(true, true, true, LockId); else EditorLogic.fetch.Unlock(LockId); locked = over; }
+            if (over != locked && EditorLogic.fetch != null) { EditorLogic.fetch.Unlock(LockId); locked = over; }
 
             if (dirty && Time.time > nextSave) { dirty = false; SaveLayout(); }
         }

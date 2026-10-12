@@ -25,6 +25,15 @@ namespace BDArmory.Avionics
         public static bool Clean;
         static readonly HashSet<int> collapsed = new();
         static readonly Dictionary<int, Rect> lastRects = new();
+        static readonly Dictionary<int, int> drawnFrame = new();
+
+        /// <summary>Is the mouse over an ELE window that was drawn this frame or the last (collapsed ones count as their bar)?</summary>
+        public static bool MouseOverWindow()
+        {
+            var m = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
+            foreach (var kv in lastRects) if (drawnFrame.TryGetValue(kv.Key, out int f) && Time.frameCount - f <= 2 && kv.Value.Contains(m)) return true;
+            return false;
+        }
         static readonly Dictionary<int, Vector2> pending = new();
         static readonly Dictionary<int, string> titles = new();
         const float Snap = 12f;
@@ -53,6 +62,7 @@ namespace BDArmory.Avionics
             rect.position = draw.position;
             if (!isCollapsed) rect.size = new Vector2(rect.width, Mathf.Max(rect.height, draw.height));
             lastRects[id] = isCollapsed ? draw : rect;
+            drawnFrame[id] = Time.frameCount;
             return rect;
         }
 

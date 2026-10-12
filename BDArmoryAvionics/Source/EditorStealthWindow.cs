@@ -58,8 +58,7 @@ namespace BDArmory.Avionics
         {
             if (!Show || !HighLogic.LoadedSceneIsEditor) { return; }
             rect = AvionicsCore.DrawWindow(WindowID, rect, Draw, "Stealth & EW analysis", BDArmorySetup.BDGuiSkin);
-            if (rect.Contains(Event.current.mousePosition)) EditorLogic.fetch?.Lock(true, true, true, "BDAStealthEditor");
-            else EditorLogic.fetch?.Unlock("BDAStealthEditor");
+            EditorLogic.fetch?.Unlock("BDAStealthEditor");
         }
 
         void Analyse()

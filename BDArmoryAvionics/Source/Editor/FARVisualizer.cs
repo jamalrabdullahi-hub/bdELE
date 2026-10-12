@@ -126,8 +126,7 @@ namespace BDArmory.Avionics
         {
             if (!Show || !HighLogic.LoadedSceneIsEditor) return;
             rect = AvionicsCore.DrawWindow(WindowID, rect, Draw, "FAR aerodynamics", BDArmorySetup.BDGuiSkin);
-            var m = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
-            if (rect.Contains(m)) EditorLogic.fetch?.Lock(true, true, true, "ELE_FARVis"); else EditorLogic.fetch?.Unlock("ELE_FARVis");
+
         }
 
         void OnDestroy() => EditorLogic.fetch?.Unlock("ELE_FARVis");

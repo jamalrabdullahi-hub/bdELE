@@ -131,8 +131,7 @@ namespace BDArmory.Avionics
         {
             if (!show || !HighLogic.LoadedSceneIsEditor) return;
             rect = AvionicsCore.DrawWindow(WindowID, rect, Draw, "C4ISR craft setup", BDArmorySetup.BDGuiSkin);
-            if (rect.Contains(Event.current.mousePosition)) EditorLogic.fetch?.Lock(true, true, true, "BDAC4ISREditor");
-            else EditorLogic.fetch?.Unlock("BDAC4ISREditor");
+            EditorLogic.fetch?.Unlock("BDAC4ISREditor");   // (the ELE editor lock guard handles mouse-over now)
         }
 
         void Draw(int id)
