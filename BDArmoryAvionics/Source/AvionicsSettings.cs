@@ -112,12 +112,7 @@ namespace BDArmory.Avionics
         public static bool GEffects = true;             // grey-out / red-out / G-LOC for crewed craft
         public static bool CamShake = true;             // camera shake from G onset, hits and guns
         public static bool Callouts = true;             // PULL UP / STALL / BINGO etc. with tones
-        public static bool KrakenGuard = true;          // gentle unpack, stiffer solver, runaway-energy watchdog
-        public static bool KrakenWatchdog = true;
         public static bool Profiler = false;            // ELE performance profiler window
-        public static bool PhysicsLOD = true;           // full physics near / engaged, rigid on rails further, unloaded ghosts beyond
-        public static float LODUnpackKm = 8f, LODLoadKm = 30f, LODMarkerKm = 800f;
-        public static bool LODMarkers = true;
         public static bool DynamicDamage = true;        // dents, scorch marks and bent parts from hits
         public static float DamageIntensity = 1f;
         public static bool VaporCones = true;           // transonic vapor cones + shock ring at Mach 1 (volumetric)
@@ -229,7 +224,6 @@ namespace BDArmory.Avionics
                 Volumetric = GetBool(node, "Volumetric", Volumetric);
                 VaporCones = GetBool(node, "VaporCones", VaporCones);
                 DynamicDamage = GetBool(node, "DynamicDamage", DynamicDamage);
-                KrakenGuard = GetBool(node, "KrakenGuard", KrakenGuard);
                 GEffects = GetBool(node, "GEffects", GEffects);
                 UseVEFX = GetBool(node, "UseVEFX", UseVEFX);
                 EngineSmoke = GetBool(node, "EngineSmoke", EngineSmoke);
@@ -237,12 +231,6 @@ namespace BDArmory.Avionics
                 CamShake = GetBool(node, "CamShake", CamShake);
                 Callouts = GetBool(node, "Callouts", Callouts);
                 if (int.TryParse(node.GetValue("KillCamMode"), out int kcm)) KillCamMode = Mathf.Clamp(kcm, 0, 2);
-                KrakenWatchdog = GetBool(node, "KrakenWatchdog", KrakenWatchdog);
-                PhysicsLOD = GetBool(node, "PhysicsLOD", PhysicsLOD);
-                LODMarkers = GetBool(node, "LODMarkers", LODMarkers);
-                LODUnpackKm = Mathf.Clamp(GetFloat(node, "LODUnpackKm", LODUnpackKm), 2.5f, 50f);
-                LODLoadKm = Mathf.Clamp(GetFloat(node, "LODLoadKm", LODLoadKm), 5f, 150f);
-                LODMarkerKm = Mathf.Clamp(GetFloat(node, "LODMarkerKm", LODMarkerKm), 10f, 3000f);
                 if (float.TryParse(node.GetValue("DamageIntensity"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var di)) DamageIntensity = di;
                 RadarTerrainMask = GetBool(node, "RadarTerrainMask", RadarTerrainMask);
                 TheatreSpawnKm = Mathf.Clamp(GetFloat(node, "TheatreSpawnKm", TheatreSpawnKm), 20f, 200f);
@@ -346,7 +334,6 @@ namespace BDArmory.Avionics
                 node.AddValue("Volumetric", Volumetric);
                 node.AddValue("VaporCones", VaporCones);
                 node.AddValue("DynamicDamage", DynamicDamage);
-                node.AddValue("KrakenGuard", KrakenGuard);
                 node.AddValue("GEffects", GEffects);
                 node.AddValue("UseVEFX", UseVEFX);
                 node.AddValue("EngineSmoke", EngineSmoke);
@@ -354,12 +341,6 @@ namespace BDArmory.Avionics
                 node.AddValue("CamShake", CamShake);
                 node.AddValue("Callouts", Callouts);
                 node.AddValue("KillCamMode", KillCamMode);
-                node.AddValue("KrakenWatchdog", KrakenWatchdog);
-                node.AddValue("PhysicsLOD", PhysicsLOD);
-                node.AddValue("LODMarkers", LODMarkers);
-                node.AddValue("LODUnpackKm", LODUnpackKm);
-                node.AddValue("LODLoadKm", LODLoadKm);
-                node.AddValue("LODMarkerKm", LODMarkerKm);
                 node.AddValue("DamageIntensity", DamageIntensity.ToString(System.Globalization.CultureInfo.InvariantCulture));
                 node.AddValue("RadarTerrainMask", RadarTerrainMask);
                 node.AddValue("TheatreSpawnKm", TheatreSpawnKm);

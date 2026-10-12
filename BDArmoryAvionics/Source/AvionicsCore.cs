@@ -307,12 +307,7 @@ namespace BDArmory.Avionics
 
         void PhysicsTab()
         {
-            if (ToggleCycle(ref AvionicsSettings.PhysicsLOD, AvionicsSettings.PhysicsLOD ? "Physics LOD" : "Physics LOD off", $"Full {AvionicsSettings.LODUnpackKm:F0} km"))
-                AvionicsSettings.LODUnpackKm = AvionicsSettings.LODUnpackKm >= 25 ? 5 : AvionicsSettings.LODUnpackKm + 5;
-            if (ToggleCycle(ref AvionicsSettings.LODMarkers, AvionicsSettings.LODMarkers ? "Far markers" : "Markers off", $"Loaded {AvionicsSettings.LODLoadKm:F0} km"))
-                AvionicsSettings.LODLoadKm = AvionicsSettings.LODLoadKm >= 100 ? 15 : AvionicsSettings.LODLoadKm + 15;
-            if (AvionicsSettings.PhysicsLOD) Note($"Craft: {PhysicsLOD.Full} full · {PhysicsLOD.Rigid} rigid · {PhysicsLOD.Ghost} ghost");
-            Pair(ref AvionicsSettings.KrakenGuard, AvionicsSettings.KrakenGuard ? $"Kraken guard ({KrakenGuard.Fixes})" : "Kraken guard off", ref AvionicsSettings.Profiler, "Profiler");
+            AvionicsSettings.Profiler = Row(AvionicsSettings.Profiler, "Profiler");
             Header("Time");
             float h = hw2(w);
             if (GUI.Button(new Rect(8, y, h, RowH - 2), $"Slow-mo: {SlowMo.Names[SlowMo.Index]}", SlowMo.Index > 0 ? sel : btn)) SlowMo.Set((SlowMo.Index + 1) % SlowMo.Speeds.Length);

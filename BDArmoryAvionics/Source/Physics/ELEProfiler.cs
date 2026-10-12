@@ -32,7 +32,6 @@ namespace BDArmory.Avionics
             ("BDA explosions", "BDArmory.FX.ExplosionFx:ExecutePartBlastEvent"),
             ("ELE shrapnel", "BDArmory.Avionics.Shrapnel:Detonate"),
             ("ELE sensor engine", "BDArmory.Avionics.SensorEngine:Update"),
-            ("ELE kraken guard", "BDArmory.Avionics.KrakenGuard:FixedUpdate"),
             ("ELE dynamic damage", "BDArmory.Avionics.DynamicDamage:Update"),
             ("ELE AI commander", "BDArmory.Avionics.Materializer:Update"),
         };
@@ -151,8 +150,6 @@ namespace BDArmory.Avionics
                 y += 17;
             }
             y += 4;
-            GUI.Label(new Rect(8, y, 450, 18), $"Kraken guard: {KrakenGuard.Fixes} runaway parts caught, {KrakenGuard.Unpacks} gentle unpacks"); y += 18;
-            if (!string.IsNullOrEmpty(KrakenGuard.LastEvent)) { GUI.Label(new Rect(8, y, 450, 18), "last: " + KrakenGuard.LastEvent); y += 18; }
             if (GUI.Button(new Rect(8, y, 150, 20), csv ? "Logging CSV..." : "Log CSV", csv ? sel : btn)) { csv = !csv; if (!csv) { writer?.Close(); writer = null; } }
             if (GUI.Button(new Rect(162, y, 100, 20), "Reset", btn)) { frames = 0; head = 0; }
             if (GUI.Button(new Rect(266, y, 100, 20), "Close", btn)) AvionicsSettings.Profiler = false;
