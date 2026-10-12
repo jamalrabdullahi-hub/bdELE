@@ -142,7 +142,8 @@ namespace BDArmory.Avionics
             var small = AvionicsDraw.LabelSmall;
             float w = rect.width - 16, y = 24;
 
-            if (GUI.Button(new Rect(8, y, 200, 22), analysed ? "Re-analyse craft" : "Analyse craft", btn)) Analyse();
+            if (GUI.Button(new Rect(8, y, 130, 22), analysed ? "Re-analyse craft" : "Analyse craft", btn)) Analyse();
+            if (GUI.Button(new Rect(142, y, 70, 22), "Export 3D", btn)) note = CraftExport.ExportShip();
             AvionicsDraw.ColorLabel(new Rect(216, y + 3, w - 210, 16), "Active model (used in flight):", small, AvionicsDraw.ScopeText);
             float mw = 64;
             for (int i = 0; i < 4; i++)
@@ -179,6 +180,16 @@ namespace BDArmory.Avionics
                 AvionicsDraw.ColorLabel(new Rect(cx[7], y, 110, 14), $"{Km(DetectKm(radar, eff))} (nose {Km(DetectKm(radar, Effective(r.front)))})", small, col);
                 AvionicsDraw.ColorLabel(new Rect(cx[8], y, 110, 14), $"{Km(LockKm(radar, eff))}", small, col);
                 y += 15;
+            }
+            // One number to compare designs: frontal sector (±45° azimuth, ±15° elevation) under the active model.
+            {
+                var ar = results[AvionicsSettings.StealthModel];
+                float sum = 0; int n = 0;
+                for (float az = -45; az <= 45; az += 5) for (float el = -15; el <= 15; el += 15) { sum += Mathf.Max(1e-4f, Effective(At(ar, az, el))); n++; }
+                float avg = sum / n, rating = 20f - 10f * Mathf.Log10(avg);
+                string grade = rating >= 35 ? "very low observable" : rating >= 28 ? "low observable" : rating >= 22 ? "reduced signature" : rating >= 16 ? "conventional" : "large target";
+                AvionicsDraw.ColorLabel(new Rect(8, y + 2, w, 18), $"Stealth rating: {rating:F1}   ({grade}; frontal average {M2(avg)} m², {StealthRCS.ModeNames[AvionicsSettings.StealthModel]} model)", AvionicsDraw.Header, rating >= 28 ? AvionicsDraw.Friendly : AvionicsDraw.HudText);
+                y += 22;
             }
             if (rcsReduction != 1f || rcsOverride > 0) { AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), rcsOverride > 0 ? $"RCS override part: {rcsOverride:F2} m² regardless of shape" : $"RCS-reduction parts: x{rcsReduction:F2} applied to detection ranges", small, AvionicsDraw.Unknown); y += 15; }
             y += 6;
