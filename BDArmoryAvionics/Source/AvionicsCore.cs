@@ -201,7 +201,7 @@ namespace BDArmory.Avionics
             C(ref AvionicsSettings.ShowEW); C(ref AvionicsSettings.ShowLM); C(ref AvionicsSettings.ShowFeeds);
             C(ref C4ISRSettings.ShowConsole); C(ref C4ISRSettings.ShowIADS); C(ref C4ISRSettings.ShowLink); C(ref C4ISRSettings.ShowSettings);
             C(ref TheatreWindow.Show); C(ref AirfieldsWindow.Show); C(ref ATCWindow.Show); C(ref AfterActionWindow.Show);
-            C(ref ExplosionTestWindow.Show); C(ref AvionicsSettings.Profiler);
+            C(ref ExplosionTestWindow.Show); C(ref LiveStealth.Show); C(ref AvionicsSettings.Profiler);
             return n;
         }
 
@@ -248,6 +248,7 @@ namespace BDArmory.Avionics
             AvionicsSettings.ShowGPSManager = Row(AvionicsSettings.ShowGPSManager, "GPS Manager");
             AvionicsSettings.ShowFeeds = Row(AvionicsSettings.ShowFeeds, Ocisly.Available ? "Camera feeds (OCISLY)" : "Camera feeds (OCISLY not loaded)");
             AvionicsSettings.ThreatBanner = Row(AvionicsSettings.ThreatBanner, "Missile / lock warning banner");
+            Pair(ref LiveStealth.Show, "Live stealth", ref AvionicsSettings.StealthHud, "Radar HUD marks");
             Note("FLIR and the pod HUD: bottom of the Target Camera window.");
         }
 

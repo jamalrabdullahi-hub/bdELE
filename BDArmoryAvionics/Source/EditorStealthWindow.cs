@@ -1,3 +1,4 @@
+using System.Linq;
 using System;
 using System.Collections.Generic;
 using System.Reflection;
@@ -194,6 +195,10 @@ namespace BDArmory.Avionics
             if (rcsReduction != 1f || rcsOverride > 0) { AvionicsDraw.ColorLabel(new Rect(8, y, w, 14), rcsOverride > 0 ? $"RCS override part: {rcsOverride:F2} m² regardless of shape" : $"RCS-reduction parts: x{rcsReduction:F2} applied to detection ranges", small, AvionicsDraw.Unknown); y += 15; }
             y += 6;
 
+            if (GUI.Button(new Rect(8, y, 220, 20), allRadars ? "Back to plot / EW" : $"Detection by every radar ({radars.Count})", allRadars ? sel : btn)) allRadars = !allRadars;
+            y += 24;
+            if (allRadars) { DrawRadarTable(y, w); GUI.DragWindow(new Rect(0, 0, rect.width - 22, 20)); return; }
+
             // Polar plot (left) + EW (right)
             float size = 250;
             var plot = new Rect(8, y, size, size);
@@ -206,6 +211,38 @@ namespace BDArmory.Avionics
             float ex = 8 + size + 14, ew = rect.width - ex - 8, ey = y;
             DrawEW(ex, ref ey, ew, radar);
             GUI.DragWindow(new Rect(0, 0, rect.width - 22, 20));
+        }
+
+        bool allRadars; Vector2 radarScroll;
+
+        /// <summary>Every scanning radar in the game against this craft (active model, with its ECM): detect / lock range by aspect.</summary>
+        void DrawRadarTable(float y, float w)
+        {
+            var r = results[AvionicsSettings.StealthModel];
+            float nose = Effective(r.front), side = Effective(r.side), tail = Effective(r.rear), all = Effective(r.total);
+            float[] cx = [8, 250, 320, 390, 460, 530, 600];
+            string[] head = ["Radar (detect at: nose / side / tail / overall)", "Nose", "Side", "Tail", "Overall", "Lock nose", "Max"];
+            for (int i = 0; i < head.Length; i++) AvionicsDraw.ColorLabel(new Rect(cx[i], y, i == 0 ? 240 : 70, 14), head[i], AvionicsDraw.Header, AvionicsDraw.ScopeText);
+            y += 16;
+            var order = Enumerable.Range(0, radars.Count).OrderByDescending(i => DetectKm(radars[i], nose)).ToList();
+            var view = new Rect(8, y, w, rect.height - y - 10);
+            radarScroll = GUI.BeginScrollView(view, radarScroll, new Rect(0, 0, w - 18, order.Count * 15 + 4));
+            float ry = 0;
+            foreach (int i in order)
+            {
+                var rd = radars[i];
+                float dn = DetectKm(rd, nose);
+                var col = dn <= 0 ? AvionicsDraw.Friendly : dn < rd.radarMaxDistanceDetect * 0.5f ? AvionicsDraw.Unknown : AvionicsDraw.Hostile;
+                AvionicsDraw.ColorLabel(new Rect(0, ry, 240, 14), radarNames[i], AvionicsDraw.LabelSmall, col);
+                AvionicsDraw.ColorLabel(new Rect(cx[1] - 8, ry, 70, 14), Km(dn), AvionicsDraw.LabelSmall, col);
+                AvionicsDraw.ColorLabel(new Rect(cx[2] - 8, ry, 70, 14), Km(DetectKm(rd, side)), AvionicsDraw.LabelSmall, col);
+                AvionicsDraw.ColorLabel(new Rect(cx[3] - 8, ry, 70, 14), Km(DetectKm(rd, tail)), AvionicsDraw.LabelSmall, col);
+                AvionicsDraw.ColorLabel(new Rect(cx[4] - 8, ry, 70, 14), Km(DetectKm(rd, all)), AvionicsDraw.LabelSmall, col);
+                AvionicsDraw.ColorLabel(new Rect(cx[5] - 8, ry, 70, 14), Km(LockKm(rd, nose)), AvionicsDraw.LabelSmall, col);
+                AvionicsDraw.ColorLabel(new Rect(cx[6] - 8, ry, 70, 14), $"{rd.radarMaxDistanceDetect:F0} km", AvionicsDraw.LabelSmall, AvionicsDraw.ScopeText);
+                ry += 15;
+            }
+            GUI.EndScrollView();
         }
 
         void DrawPolar(Rect r)
