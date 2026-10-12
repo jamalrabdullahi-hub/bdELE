@@ -83,6 +83,10 @@ namespace BDArmory.Avionics
 
             if (GPSMarkers.TryDrop()) return;
             if (GUIUtility.keyboardControl != 0) return; // typing in a text field
+            bool alt = Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt);
+            if (alt && Input.GetKeyDown(KeyCode.H)) { UIDock.Clean = !UIDock.Clean; ScreenMessages.PostScreenMessage(UIDock.Clean ? "ELE clean mode" : "ELE windows back", 1.2f, ScreenMessageStyle.UPPER_CENTER); }
+            if (alt && Input.GetKeyDown(KeyCode.L)) UIDock.Apply((UIDock.Layout + 1) % UIDock.LayoutNames.Length);
+            if (AvionicsSettings.FoldToolbar && Time.frameCount % 120 == 0) UIDock.FoldToolbar(true, toolbarButton);   // mods that re-add their buttons
 
             if (KeyDown(AvionicsSettings.KeyNextTarget)) AvionicsContacts.Cycle(1);
             if (KeyDown(AvionicsSettings.KeyPrevTarget)) AvionicsContacts.Cycle(-1);
@@ -141,7 +145,7 @@ namespace BDArmory.Avionics
 
             var skin = BDArmorySetup.BDGuiSkin;
             if (showMenu)
-                { menuRect = DrawWindow(MenuWindowID, menuRect, MenuWindow, "BDA: Enhanced Lethality", skin); menuRect.height = menuHeight; }
+                { menuRect = UIDock.Clean ? DrawWindowPlain(MenuWindowID, menuRect, MenuWindow, "BDA: Enhanced Lethality", skin) : DrawWindow(MenuWindowID, menuRect, MenuWindow, "BDA: Enhanced Lethality", skin); menuRect.height = menuHeight; }
             if (AvionicsSettings.ShowRadar3D)
                 AvionicsSettings.Radar3DRect = KeepSize(DrawWindow(Radar3DWindow.WindowID, AvionicsSettings.Radar3DRect, Radar3DWindow.Draw, "3D Radar", skin), AvionicsSettings.Radar3DRect);
             if (AvionicsSettings.ShowTargetList)
@@ -155,6 +159,11 @@ namespace BDArmory.Avionics
 
         public static Rect DrawWindow(int id, Rect rect, GUI.WindowFunction func, string title, GUISkin skin)
         {
+            return UIDock.Draw(id, rect, func, title, skin);
+        }
+
+        public static Rect DrawWindowPlain(int id, Rect rect, GUI.WindowFunction func, string title, GUISkin skin)
+        {
             var m = GUI.matrix;
             float s = BDArmorySettings.UI_SCALE_ACTUAL;
             if (s != 1) GUIUtility.ScaleAroundPivot(s * Vector2.one, rect.position);
@@ -165,7 +174,7 @@ namespace BDArmory.Avionics
         }
 
         // ---------------- hub: tabs instead of one long list ----------------
-        static readonly string[] Tabs = { "Sensors", "Command", "Air ops", "Effects", "Physics", "System" };
+        static readonly string[] Tabs = { "Sensors", "Command", "Air ops", "Effects", "Physics", "System", "View", "Mods" };
         static int tab;
         const float RowH = 22, Gap = 4;
         float y, w, menuHeight = 300;
@@ -216,10 +225,10 @@ namespace BDArmory.Avionics
             btn = BDArmorySetup.ButtonStyle; sel = BDArmorySetup.SelectedButtonStyle;
             w = menuRect.width - 16; y = 24;
 
-            // tab strip: two rows of three
-            float tw = (w - 8) / 3;
+            // tab strip: two rows of four
+            float tw = (w - 12) / 4;
             for (int i = 0; i < Tabs.Length; i++)
-                if (GUI.Toggle(new Rect(8 + (i % 3) * (tw + 4), y + (i / 3) * RowH, tw, RowH - 2), tab == i, Tabs[i], tab == i ? sel : btn)) tab = i;
+                if (GUI.Toggle(new Rect(8 + (i % 4) * (tw + 4), y + (i / 4) * RowH, tw, RowH - 2), tab == i, Tabs[i], tab == i ? sel : btn)) tab = i;
             y += 2 * RowH + Gap;
 
             switch (tab)
@@ -229,7 +238,9 @@ namespace BDArmory.Avionics
                 case 2: AirOpsTab(); break;
                 case 3: EffectsTab(); break;
                 case 4: PhysicsTab(); break;
-                default: SystemTab(); break;
+                case 5: SystemTab(); break;
+                case 6: ViewTab(); break;
+                default: ModsTab(); break;
             }
 
             // footer: always-visible status + window housekeeping
@@ -315,6 +326,41 @@ namespace BDArmory.Avionics
             if (GUI.Button(new Rect(12 + h, y, h, RowH - 2), SlowMo.Frozen ? "Unfreeze" : "Freeze", SlowMo.Frozen ? sel : btn)) SlowMo.ToggleFreeze();
             y += RowH;
             Note("Alt+, slower · Alt+. faster · Alt+/ freeze · Alt+; step");
+        }
+
+        void ViewTab()
+        {
+            Header("Layouts (Alt+L cycles)");
+            float h = (w - 8) / 3;
+            for (int i = 0; i < UIDock.LayoutNames.Length; i++)
+                if (GUI.Button(new Rect(8 + (i % 3) * (h + 4), y + (i / 3) * RowH, h, RowH - 2), UIDock.LayoutNames[i], UIDock.Layout == i ? sel : btn)) UIDock.Apply(i);
+            y += 2 * RowH;
+            if (GUI.Button(new Rect(8, y, w, RowH - 2), UIDock.Layout >= 0 ? $"Save current windows as \"{UIDock.LayoutNames[UIDock.Layout]}\"" : "Pick a layout above, then save over it", btn) && UIDock.Layout >= 0) UIDock.SaveCurrent(UIDock.Layout);
+            y += RowH;
+            Header("Screen");
+            if (GUI.Button(new Rect(8, y, w, RowH - 2), UIDock.Clean ? "Clean mode ON (Alt+H)" : "Clean mode off (Alt+H)", UIDock.Clean ? sel : btn)) UIDock.Clean = !UIDock.Clean;
+            y += RowH;
+            AvionicsSettings.HudStrip = Row(AvionicsSettings.HudStrip, "Combat strip (bottom bar)");
+            bool fold = Row(AvionicsSettings.FoldToolbar, "Fold other mods' toolbar buttons into Mods");
+            if (fold != AvionicsSettings.FoldToolbar) { AvionicsSettings.FoldToolbar = fold; UIDock.FoldToolbar(fold, toolbarButton); }
+            Note("Windows snap to edges / each other; – collapses one.");
+        }
+
+        Vector2 modsScroll;
+        void ModsTab()
+        {
+            var list = UIDock.ModButtons(toolbarButton);
+            Note(list.Count == 0 ? "No other mod buttons in this scene." : "Click an icon to open / close that mod.");
+            const float icon = 36f; int per = Mathf.Max(1, (int)((w + 4) / (icon + 4)));
+            for (int i = 0; i < list.Count; i++)
+            {
+                var r = new Rect(8 + (i % per) * (icon + 4), y + (i / per) * (icon + 4), icon, icon);
+                var b = list[i];
+                bool on = b.toggleButton != null && b.toggleButton.CurrentState == KSP.UI.UIRadioButton.State.True;
+                if (GUI.Button(r, "", on ? sel : btn)) UIDock.Toggle(b);
+                var tex = UIDock.Icon(b); if (tex != null) GUI.DrawTexture(new Rect(r.x + 3, r.y + 3, icon - 6, icon - 6), tex, ScaleMode.ScaleToFit);
+            }
+            y += Mathf.Ceil(list.Count / (float)per) * (icon + 4) + 4;
         }
 
         void SystemTab()

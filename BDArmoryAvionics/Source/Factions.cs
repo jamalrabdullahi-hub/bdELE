@@ -438,7 +438,7 @@ namespace BDArmory.Avionics
         protected virtual void OnGUI()
         {
             if (!Show || FactionsScenario.Instance == null) return;
-            rect = GUI.Window(WindowID, rect, Draw, "Theatre: factions & bases", BDArmorySetup.BDGuiSkin.window);
+            rect = AvionicsCore.DrawWindow(WindowID, rect, Draw, "Theatre: factions & bases", BDArmorySetup.BDGuiSkin);
         }
 
         void Draw(int id)

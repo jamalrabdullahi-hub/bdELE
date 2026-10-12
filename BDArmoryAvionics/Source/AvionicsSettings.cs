@@ -106,7 +106,9 @@ namespace BDArmory.Avionics
         public static float TheatreSpawnKm = 150f;      // AI flights materialise inside this slant range (atmospheric craft only)
         public static bool RadarTerrainMask = true;     // ELE sensor engine: radars can't see through hills at any range
         public static bool UseVEFX = true;
-        public static bool StealthHud = false;           // live stealth markers on hostile radars
+        public static bool StealthHud = false;
+        public static bool HudStrip = true;              // combat strip along the bottom
+        public static bool FoldToolbar = false;          // other mods' toolbar buttons live in the ELE panel           // live stealth markers on hostile radars
         public static bool EngineSmoke = true;          // ELE smoke / contrails on every engine
         public static float EngineSmokeAmount = 1f;              // weapon explosions drawn by the merged Volumetric Explosion FX
         public static int KillCamMode = 1;              // 0 off, 1 kills involving my craft, 2 any kill nearby
@@ -228,6 +230,8 @@ namespace BDArmory.Avionics
                 GEffects = GetBool(node, "GEffects", GEffects);
                 UseVEFX = GetBool(node, "UseVEFX", UseVEFX);
                 StealthHud = GetBool(node, "StealthHud", StealthHud);
+                HudStrip = GetBool(node, "HudStrip", HudStrip);
+                FoldToolbar = GetBool(node, "FoldToolbar", FoldToolbar);
                 EngineSmoke = GetBool(node, "EngineSmoke", EngineSmoke);
                 if (float.TryParse(node.GetValue("EngineSmokeAmount"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var esa)) EngineSmokeAmount = Mathf.Clamp(esa, 0.25f, 2f);
                 CamShake = GetBool(node, "CamShake", CamShake);
@@ -339,6 +343,8 @@ namespace BDArmory.Avionics
                 node.AddValue("GEffects", GEffects);
                 node.AddValue("UseVEFX", UseVEFX);
                 node.AddValue("StealthHud", StealthHud);
+                node.AddValue("HudStrip", HudStrip);
+                node.AddValue("FoldToolbar", FoldToolbar);
                 node.AddValue("EngineSmoke", EngineSmoke);
                 node.AddValue("EngineSmokeAmount", EngineSmokeAmount.ToString(System.Globalization.CultureInfo.InvariantCulture));
                 node.AddValue("CamShake", CamShake);

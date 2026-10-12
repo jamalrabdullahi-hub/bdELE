@@ -35,7 +35,7 @@ namespace BDArmory.Avionics
         void OnGUI()
         {
             if (!show || CombatOperators.Instance == null) return;
-            rect = GUI.Window(71730330, rect, Draw, "Combat Operators", BDArmorySetup.BDGuiSkin.window);
+            rect = AvionicsCore.DrawWindow(71730330, rect, Draw, "Combat Operators", BDArmorySetup.BDGuiSkin);
         }
 
         static readonly string[] Names = ["Pilot", "Gunnery", "Weapons", "Sensors/EW", "Command"];

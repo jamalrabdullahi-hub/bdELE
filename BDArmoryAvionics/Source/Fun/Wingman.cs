@@ -19,6 +19,7 @@ namespace BDArmory.Avionics
     public class Wingman : MonoBehaviour
     {
         public static bool BarOpen;
+        public static int FlightCount => instance != null ? instance.flight.Count : 0;
         enum Order { Free, Form, Engage, Cover, Attack, Hold, RTB }
         static readonly string[] Callsigns = { "Two", "Three", "Four" };
         const float JoinRangeM = 30000f;

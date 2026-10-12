@@ -29,6 +29,9 @@ namespace BDArmory.Avionics
         }
         public static readonly List<Threat> Threats = new();
         public static float FrontRating = float.NaN;
+        static float wantedUntil;
+        /// <summary>Someone (an MFD page, the HUD strip) wants live numbers for a while.</summary>
+        public static void Want() => wantedUntil = Time.time + 2f;
         float nextScan, nextEval;
         readonly List<(Vessel v, ModuleRadar r)> radars = new();
 
@@ -38,7 +41,7 @@ namespace BDArmory.Avionics
         {
             var me = FlightGlobals.ActiveVessel;
             if (me == null || me.packed) { Threats.Clear(); return; }
-            if (!Show && !AvionicsSettings.StealthHud) return;
+            if (!Show && !AvionicsSettings.StealthHud && Time.time > wantedUntil) return;
             if (Time.time >= nextScan)
             {
                 nextScan = Time.time + 2f;

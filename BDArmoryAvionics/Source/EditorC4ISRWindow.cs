@@ -130,7 +130,7 @@ namespace BDArmory.Avionics
         void OnGUI()
         {
             if (!show || !HighLogic.LoadedSceneIsEditor) return;
-            rect = GUI.Window(WindowID, rect, Draw, "C4ISR craft setup", BDArmorySetup.BDGuiSkin.window);
+            rect = AvionicsCore.DrawWindow(WindowID, rect, Draw, "C4ISR craft setup", BDArmorySetup.BDGuiSkin);
             if (rect.Contains(Event.current.mousePosition)) EditorLogic.fetch?.Lock(true, true, true, "BDAC4ISREditor");
             else EditorLogic.fetch?.Unlock("BDAC4ISREditor");
         }

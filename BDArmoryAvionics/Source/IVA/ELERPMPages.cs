@@ -45,6 +45,7 @@ namespace BDArmory.Avionics
                     case "SYS": Sys(sb, h); break;
                     case "C2": C2(sb); break;
                     case "AP": Ap(sb); break;
+                    case "STL": Stl(sb); break;
                     default: Home(sb); break;
                 }
                 var st = S;
@@ -158,6 +159,20 @@ namespace BDArmory.Avionics
                 sb.Append($"{c}{(n.Length > 24 ? n.Substring(0, 24) : n),-24} {hp * 100,3:F0}%  {t * 100,3:F0}%\n");
             }
             sb.Append($"{D}^v SCROLL");
+        }
+
+        void Stl(StringBuilder sb)
+        {
+            LiveStealth.Want();
+            sb.Append($"{G}STEALTH  {W}rating {(float.IsNaN(LiveStealth.FrontRating) ? "--" : LiveStealth.FrontRating.ToString("F1"))}  {D}model {StealthRCS.ModeNames[AvionicsSettings.StealthModel]}\n");
+            sb.Append($"{D}RADAR              YOU   DET   RCS\n");
+            if (LiveStealth.Threats.Count == 0) { sb.Append($"{D}no hostile radars nearby\n"); return; }
+            foreach (var t in LiveStealth.Threats.Take(14))
+            {
+                string c = t.locked ? R : t.detected ? A : G;
+                string n = t.v != null ? t.v.GetDisplayName() : "?"; if (n.Length > 16) n = n.Substring(0, 16);
+                sb.Append($"{c}{n,-16} {t.dist,5:F1} {t.detectKm,5:F1} {t.rcs,5:F2}{(t.locked ? " LCK" : t.detected ? " DET" : "")}\n");
+            }
         }
 
         void C2(StringBuilder sb)
