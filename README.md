@@ -1,3 +1,17 @@
+# BD Armory: Enhanced Lethality Edition (ELE)
+
+This repository is **ELE**, an add-on mod for BDArmory (KSP 1.12.5), plus the BDArmory 1.13.1.0 source it was built against.
+
+- **ELE mod:** `BDArmoryAvionics/` (source in `Source/`, ready-to-install files in `GameData/BDArmoryAvionics`, built DLL in its `Plugins`).
+- **Install:** close KSP, copy `BDArmoryAvionics/GameData/BDArmoryAvionics` into your KSP `GameData`. BDArmory itself must be installed (stock release).
+- **Dependencies and recommended mods:** see [DEPENDENCIES.md](DEPENDENCIES.md).
+- **Unity helper projects** (part models, shaders): `Tools/`.
+- **BDArmory source** (unchanged, for reference / building): `BDArmory/`. Original BDArmory readme below.
+
+ELE licence: CC BY-SA 4.0 (`BDArmoryAvionics/Release/LICENSE`). Includes Volumetric Explosion FX by Warnix (MIT).
+
+---
+
 BDArmory Plus
 =============
 
